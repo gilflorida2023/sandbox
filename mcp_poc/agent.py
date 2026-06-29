@@ -335,6 +335,203 @@ class CodingAgent:
         
         return "Max turns reached without completion"
 
+    async def build_preamble(self) -> tuple[list, list]:
+        """Fetch tools, build system prompt + schemas. Call once per session.
+        Returns (messages, tool_schemas)."""
+        tools = await self.mcp.list_tools()
+        tool_schemas = []
+        tool_defs = []
+        ref_tools = []
+        for tool in tools:
+            if "input_schema" in tool:
+                tool_schemas.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["input_schema"],
+                    },
+                })
+                if tool["name"].startswith(("workspace.", "wiki.")):
+                    params = tool["input_schema"].get("properties", {})
+                    param_str = " ".join(f"<{n}>" for n in params.keys())
+                    if param_str:
+                        param_str = " " + param_str
+                    tool_defs.append(
+                        f"- **{tool['name']}**: {tool['description']}{param_str}"
+                    )
+                    ref_tools.append(tool)
+
+        tool_ref = self._build_tool_reference(ref_tools)
+        system_prompt = self.system_prompt.replace(
+            "{TOOL_DEFINITIONS}", "\n".join(tool_defs)
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
+        ]
+
+        if self.session_id:
+            ctx_path = (
+                Path(config.context.path)
+                if hasattr(config, "context") and config.context.path
+                else Path(config.workspace.path) / ".context"
+            )
+            blob_file = ctx_path / self.session_id / "context-blob.md"
+            if blob_file.exists():
+                blob = blob_file.read_text()
+                messages.insert(
+                    1, {"role": "system", "content": f"## Codebase Context\n\n{blob}"}
+                )
+                logger.info("Injected context blob from %s", blob_file)
+
+        return messages, tool_schemas
+
+    async def chat(
+        self,
+        user_input: str,
+        messages: list | None = None,
+        tool_schemas: list | None = None,
+    ) -> tuple[str, list]:
+        """Single user turn.  Returns (response_text, updated_messages)."""
+        if messages is None:
+            messages, tool_schemas = await self.build_preamble()
+
+        wiki_context = self.context.get_relevant_context(user_input)
+        if wiki_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"## Reference Documentation\n\n{wiki_context}",
+                }
+            )
+
+        messages.append({"role": "user", "content": user_input})
+
+        for turn in range(config.agent.max_turns):
+            logger.info("Turn %d/%d", turn + 1, config.agent.max_turns)
+
+            try:
+                response = await self.ollama.chat(messages, tool_schemas)
+            except Exception as e:
+                logger.error("Ollama error: %s", e)
+                return f"Error communicating with Ollama: {e}", messages
+
+            done_reason = response.get("done_reason", "")
+            if done_reason == "length":
+                logger.warning(
+                    "Response truncated due to context limit (turn %d)", turn + 1
+                )
+
+            message = response.get("message", {})
+            content = message.get("content", "") or ""
+            thinking = message.get("thinking", "")
+            tool_calls = message.get("tool_calls", [])
+
+            if not content and thinking:
+                content = thinking
+
+            if not content and not tool_calls:
+                logger.warning("Empty response")
+            elif content:
+                logger.debug("Model content: %s", content[:300])
+            if tool_calls:
+                logger.info(
+                    "Tool calls: %s",
+                    [tc["function"]["name"] for tc in tool_calls],
+                )
+
+            # Some models output tool calls as JSON text in content (fallback)
+            parsed_tc = False
+            if not tool_calls and content:
+                parsed_list = _parse_text_tool_calls(content)
+                if parsed_list:
+                    parsed_tc = True
+                    tool_calls = [
+                        {
+                            "function": {
+                                "name": p["name"],
+                                "arguments": json.dumps(p["arguments"])
+                                if isinstance(p.get("arguments"), dict)
+                                else "{}",
+                            },
+                            "id": f"text_tc_{i}",
+                        }
+                        for i, p in enumerate(parsed_list)
+                    ]
+
+            if content:
+                msg = {"role": "assistant", "content": content}
+                if tool_calls and not parsed_tc:
+                    msg["tool_calls"] = tool_calls
+                messages.append(msg)
+                self.context.add_message("assistant", content, tool_calls)
+
+            if not tool_calls:
+                logger.info("No tool calls — responding")
+                return content, messages
+
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                func_args = tc["function"]["arguments"]
+                if isinstance(func_args, str):
+                    func_args = json.loads(func_args)
+
+                if func_name not in self.wiki_injected:
+                    wiki_doc = self._get_tool_wiki_doc(func_name)
+                    if wiki_doc:
+                        logger.info("Injecting wiki docs for %s", func_name)
+                        wiki_msg = {
+                            "role": "system",
+                            "content": f"## {func_name} Documentation\n\n{wiki_doc}",
+                        }
+                        messages.insert(-1, wiki_msg)
+                    self.wiki_injected.add(func_name)
+
+                logger.info("Executing: %s(%s)", func_name, func_args)
+                try:
+                    result = await self.mcp.call_tool(func_name, func_args)
+                    result_str = json.dumps(result)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "content": result_str,
+                            "tool_call_id": tc.get("id", ""),
+                        }
+                    )
+                    self.context.add_message(
+                        "tool", result_str, tool_call_id=tc.get("id", "")
+                    )
+                except Exception as e:
+                    error_msg = f"Tool {func_name} failed: {e}"
+                    logger.error(error_msg)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "content": json.dumps(
+                                {"success": False, "error": str(e)}
+                            ),
+                            "tool_call_id": tc.get("id", ""),
+                        }
+                    )
+
+        if tool_calls:
+            logger.info("Running final summary turn")
+            try:
+                response = await self.ollama.chat(messages)
+                message = response.get("message", {})
+                content = message.get("content", "") or ""
+                thinking = message.get("thinking", "")
+                if not content and thinking:
+                    content = thinking
+                if content:
+                    return content, messages
+            except Exception as e:
+                logger.error("Final turn error: %s", e)
+
+        return "Max turns reached without completion", messages
+
     async def close(self):
         await self.mcp.close()
         await self.ollama.close()
