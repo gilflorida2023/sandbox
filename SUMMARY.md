@@ -5,7 +5,7 @@
 - Agent runs on scout (Linux host), calls Ollama on Mac M4 via SSH tunnel on localhost:11434
 - Uses CGI-based MCP server (scout) for tool execution, not Python MCP SDK directly
 - Workspace at `/home/scout/projects/sandbox/workspace/` with `.wiki/` for tool documentation
-- General coding tasks (not Prime Forge arena competition)
+- General coding tasks
 - Model: `qwen2.5-coder:7b` on Mac M4, does NOT support native Ollama tool_calls — outputs JSON in markdown code blocks
 
 ## Progress
@@ -23,7 +23,7 @@
 - Fixed JSON output escaping in all CGI scripts: `compile.sh`, `run.sh`, `read.sh`, `wiki_lookup.sh` — added `\t` escaping to prevent invalid control characters in JSON output
 - Updated system prompt: injects live tool definitions + JSON call format + path discovery guidance to compensate for model's lack of native tool_calls support
 - Updated `agent.py` to dynamically inject tool definitions into system prompt via `{TOOL_DEFINITIONS}` placeholder
-- All CGI scripts copied to `/home/scout/projects/workers/scout/cgi-bin/workspace/` (active server path)
+- All CGI scripts located at `/home/scout/projects/sandbox/scout/cgi-bin/workspace/` (active server path)
 - Rewrote `README.md` with: architecture diagram, MCP layer education table, project structure, start commands, usage examples, extending docs
 
 ### In Progress
@@ -35,7 +35,7 @@
 ## Key Decisions
 - Text-parsed tool calls with markdown code block extraction — qwen2.5-coder:7b doesn't support Ollama's native `tool_calls` field, outputs JSON in `content` as plain or fenced JSON. Tool schemas are injected into the system prompt so the model knows what's available.
 - Batch extraction: `_parse_text_tool_calls()` returns all JSON objects from a code block so multiple tool calls in one response are all executed in one turn
-- Server CGI scripts live in two places: sandbox (`/home/scout/projects/sandbox/`) for development and workers (`/home/scout/projects/workers/`) for execution; both must be in sync
+- Server CGI scripts live at `/home/scout/projects/sandbox/scout/cgi-bin/` — all development and execution in one place
 
 ## Next Steps
 - Fix `compile.sh` auto-detect to also detect language from `go.mod`, `Cargo.toml`, `Makefile` etc. so `language: auto` works for directories
@@ -43,7 +43,7 @@
 - Consider using a model with native tool_calls support (e.g., llama3.2 or mistral) for more reliable function calling
 
 ## Critical Context
-- Scout server looks for CGI scripts at `/home/scout/projects/workers/scout/cgi-bin/` — sandbox edits must be copied there
+- Scout server looks for CGI scripts at `/home/scout/projects/sandbox/scout/cgi-bin/` — sandbox edits must be copied there
 - SSH tunnel must be re-established if session drops: `ssh -L 11434:localhost:11434 m4@192.168.0.7 -N -f`
 - Python agent parses tool calls from text even when Ollama response has no native `tool_calls` — handles single JSON, JSON array, and markdown-fenced multi-line JSON
 - JSON escaping must handle tabs (`\t`) in addition to backslashes, double quotes, and newlines — Go compiler errors use tabs for indentation
@@ -63,4 +63,4 @@
 - `/home/scout/projects/sandbox/scout/cgi-bin/workspace/wiki_lookup.sh`: Wiki lookup with tab-escaping fix
 - `/home/scout/projects/sandbox/scout/cgi-bin/workspace/search.sh`: Grep-based search; rewritten for valid JSON array output
 - `/home/scout/projects/sandbox/workspace/`: Workspace root with `simplesieve/` and `.wiki/`
-- `/home/scout/projects/workers/scout/cgi-bin/workspace/`: Active CGI scripts (copy from sandbox edits)
+- `/home/scout/projects/sandbox/scout/cgi-bin/workspace/`: Active CGI scripts

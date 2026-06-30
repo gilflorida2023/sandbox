@@ -28,3 +28,4 @@ def list_workflows():
 # Import to trigger registration
 from . import code_review  # noqa: F401, E402
 from . import context_load  # noqa: F401, E402
+from . import ingest_knowledge  # noqa: F401, E402

@@ -14,6 +14,7 @@ from ollama_client import OllamaClient
 from tool_wiki import ToolWiki
 from context_manager import ContextManager
 from session_log import SessionLogger
+from router import QueryRouter
 
 log_dir = Path(config.workspace.path) / ".session-log"
 log_dir.mkdir(parents=True, exist_ok=True)
@@ -84,7 +85,45 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
                 continue
         if calls:
             return calls
-    
+
+    # Fallback: search for embedded JSON object in surrounding text
+    start_idx = content.find('{"name":')
+    if start_idx == -1:
+        start_idx = content.find('{"name" :')
+    if start_idx >= 0:
+        # Try to find matching closing brace
+        depth = 0
+        in_str = False
+        esc = False
+        for end_idx in range(start_idx, len(content)):
+            ch = content[end_idx]
+            if esc:
+                esc = False
+                continue
+            if ch == '\\' and in_str:
+                esc = True
+                continue
+            if ch == '"' and not esc:
+                in_str = not in_str
+                continue
+            if not in_str:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            data = json.loads(content[start_idx:end_idx + 1])
+                            if isinstance(data, dict) and "name" in data:
+                                args = data.get("arguments", {})
+                                if isinstance(args, str):
+                                    args = json.loads(args)
+                                calls.append({"name": data["name"], "arguments": args})
+                                return calls
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        break
+
     return calls
 
 
@@ -95,6 +134,9 @@ class CodingAgent:
         self.wiki = ToolWiki()
         self.context = ContextManager(self.wiki)
         self.system_prompt = Path("prompts/system_prompt.txt").read_text()
+        self.direct_prompt = Path("prompts/direct_prompt.txt").read_text()
+        self.plan_prompt = Path("prompts/plan_prompt.txt").read_text()
+        self.router = QueryRouter()
         self.learned_tools = set()
         self.wiki_injected = set()
         self.session_id = session_id
@@ -104,6 +146,13 @@ class CodingAgent:
             ollama_port=config.ollama.port,
             ollama_model=config.ollama.model,
         )
+
+        # Ingest past session logs into knowledge base on startup
+        logs_dir = f"{config.workspace.path}/.session-log"
+        ingested = self.context.ingest_session_logs(logs_dir, max_logs=50)
+        if ingested:
+            logger.info("Ingested %d knowledge chunks from past session logs", ingested)
+            self.context.persist_knowledge()
 
     def _build_tool_reference(self, tools: list) -> str:
         lines = ["# Tool Reference Guide", ""]
@@ -124,32 +173,6 @@ class CodingAgent:
                 is_req = "required" if pname in required else f"optional (default: {pinfo.get('default', 'N/A')})"
                 lines.append(f"- `{pname}` ({ptype}, {is_req}): {pdesc}")
             
-            # Generate example call
-            example_args = {}
-            for pname, pinfo in props.items():
-                ptype = pinfo.get("type", "string")
-                if pname in required:
-                    if ptype == "string":
-                        if pname == "pattern":
-                            example_args[pname] = "search_term"
-                        elif pname == "topic":
-                            example_args[pname] = "workspace.compile"
-                        else:
-                            example_args[pname] = f"<{pname}>"
-                    elif ptype in ("integer", "number"):
-                        example_args[pname] = 0
-                    elif ptype == "boolean":
-                        example_args[pname] = False
-                    elif ptype == "array":
-                        example_args[pname] = []
-                    else:
-                        example_args[pname] = f"<{pname}>"
-            
-            if example_args:
-                example = json.dumps({"name": name, "arguments": example_args}, indent=2)
-                lines.append("")
-                lines.append("**Example:**")
-                lines.append(f"```json\n{example}\n```")
             
             lines.append("")
         
@@ -168,14 +191,190 @@ class CodingAgent:
                     return wiki_file.read_text()
         return None
 
+    def _is_dangerous_tool_call(self, func_name: str, func_args: dict) -> bool:
+        dangerous_tools = {
+            "workspace.write",
+            "workspace.delete", 
+            "workspace.compile"
+        }
+        return func_name in dangerous_tools
+
+    @staticmethod
+    def _strip_plan_json(text: str) -> str:
+        """Remove JSON tool-call patterns from plan text using balanced-brace matching."""
+        import re
+
+        def matching_brace(s: str, start: int) -> int:
+            depth = 1
+            i = start + 1
+            while i < len(s) and depth > 0:
+                if s[i] == '{':
+                    depth += 1
+                elif s[i] == '}':
+                    depth -= 1
+                i += 1
+            return i if depth == 0 else -1
+
+        def strip_tool_calls(s: str) -> str:
+            result = []
+            i = 0
+            while i < len(s):
+                if s[i] == '{':
+                    end = matching_brace(s, i)
+                    if end != -1:
+                        obj = s[i:end]
+                        if '"name"' in obj and '"arguments"' in obj:
+                            i = end
+                            continue
+                result.append(s[i])
+                i += 1
+            return ''.join(result)
+
+        stripped = strip_tool_calls(text)
+        stripped = re.sub(r'```(?:json)?\s*```', '', stripped)
+        return stripped.strip()
+
+    @staticmethod
+    def _fix_file_escaping(filepath: Path) -> bool:
+        """Fix JSON-escaping artifacts in written source files.
+        Handles the case where `\\n` inside a string literal became a real newline
+        after JSON round-trip (model's tool call -> MCP server).
+        Returns True if file was modified."""
+        import re
+        try:
+            source = filepath.read_text()
+        except Exception:
+            return False
+
+        lines = source.split('\n')
+        unclosed_fstring = re.compile(r"(f'[^']*\{[^}]*\})$")
+        unclosed_fstring2 = re.compile(r'(f"[^"]*\{[^}]*\})$')
+        unclosed_string = re.compile(r"('(?:[^'\\]|\\.)*)$")
+        unclosed_string2 = re.compile(r'("(?:[^"\\]|\\.)*)$')
+
+        new_lines = []
+        i = 0
+        fixed = False
+        while i < len(lines):
+            if i + 1 >= len(lines):
+                new_lines.append(lines[i])
+                i += 1
+                continue
+
+            m1 = unclosed_fstring.search(lines[i])
+            m2 = unclosed_fstring2.search(lines[i])
+            if (m1 or m2):
+                next_line = lines[i+1].strip()
+                if next_line.startswith("')") or next_line.startswith('")'):
+                    continuation = next_line[1:]  # strip opening quote
+                    combined = lines[i] + '\\n' + continuation
+                    new_lines.append(combined)
+                    i += 2
+                    fixed = True
+                    continue
+
+            m3 = unclosed_string.search(lines[i])
+            m4 = unclosed_string2.search(lines[i])
+            if (m3 or m4):
+                next_line = lines[i+1].strip()
+                # Line ends with unclosed single/double-quoted string
+                # Next line starts with a continuation pattern like + '...' or "
+                if next_line.startswith("+ '") or next_line.startswith('+ "') or \
+                   next_line.startswith("'") or next_line.startswith('"'):
+                    # This might be an intended \n — join
+                    pass  # too risky to auto-fix without more context
+
+            new_lines.append(lines[i])
+            i += 1
+
+        if fixed:
+            source = '\n'.join(new_lines)
+
+        # Balanced-brace fix for C files: if more { than }, append missing }
+        if filepath.suffix in ('.c', '.h'):
+            in_str = False
+            esc = False
+            brace_depth = 0
+            for ch in source:
+                if esc:
+                    esc = False
+                    continue
+                if ch == '\\' and in_str:
+                    esc = True
+                    continue
+                if ch == '"':
+                    in_str = not in_str
+                    continue
+                if not in_str:
+                    if ch == '{':
+                        brace_depth += 1
+                    elif ch == '}':
+                        brace_depth -= 1
+            if brace_depth > 0:
+                source += '\n' * brace_depth + '}' * brace_depth
+                fixed = True
+                logger.info("Auto-fixed %d missing closing brace(s) in %s", brace_depth, filepath)
+
+        if fixed:
+            filepath.write_text(source)
+            logger.info("Written fix for %s", filepath)
+        return fixed
+
+    @staticmethod
+    def _write_file_directly(path: str, content: str) -> dict:
+        """Write a file to the workspace directly, bypassing MCP's sed-based JSON parsing.
+        Returns the same result dict format as workspace.write."""
+        workspace_root = Path(config.workspace.path).resolve()
+        full_path = (workspace_root / path).resolve()
+        # Sandbox check
+        if not str(full_path).startswith(str(workspace_root)):
+            return {"success": False, "error": "Path outside workspace"}
+        try:
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(content)
+            bytes_written = len(content.encode("utf-8"))
+            logger.info("Direct write: %s (%d bytes)", path, bytes_written)
+            return {"success": True, "path": path, "bytes_written": bytes_written}
+        except Exception as e:
+            logger.error("Direct write failed: %s", e)
+            return {"success": False, "error": str(e)}
+
+    def _format_output(self, plan: str, tool_log: list, final_content: str) -> str:
+        parts = [f"── Phase 1: Plan ──────────────────────────────", plan, ""]
+        if tool_log:
+            parts.append("── Phase 2: Execution ──────────────────────────")
+            parts.extend(tool_log)
+            parts.append("")
+        if final_content:
+            parts.append(final_content)
+        return "\n".join(parts)
+
     async def run(self, task: str) -> str:
         logger.info(f"Starting task: {task}")
-        
-        # Get all tool schemas
+        route = self.router.classify(task)
+
+        if route == "direct":
+            msgs = [
+                {"role": "system", "content": self.direct_prompt},
+                {"role": "user", "content": task},
+            ]
+            response = await self.ollama.chat(msgs, [])
+            content = response.get("message", {}).get("content", "") or ""
+            return content
+
+        # Tool route — Phase 1: Plan
+        plan_msgs = [
+            {"role": "system", "content": self.plan_prompt},
+            {"role": "user", "content": task},
+        ]
+        plan_resp = await self.ollama.chat(plan_msgs, [])
+        plan = self._strip_plan_json(plan_resp.get("message", {}).get("content", "") or "")
+
+        # Phase 2: Execute
         tools = await self.mcp.list_tools()
         tool_schemas = []
         tool_defs = []
-        ref_tools = []  # Only workspace/wiki tools for the reference doc
+        ref_tools = []
         for tool in tools:
             if "input_schema" in tool:
                 tool_schemas.append({
@@ -186,7 +385,6 @@ class CodingAgent:
                         "parameters": tool["input_schema"]
                     }
                 })
-                # Only show workspace/wiki tools in the visible reference
                 if tool["name"].startswith(("workspace.", "wiki.")):
                     params = tool["input_schema"].get("properties", {})
                     param_str = " ".join(f"<{n}>" for n in params.keys())
@@ -194,26 +392,26 @@ class CodingAgent:
                         param_str = " " + param_str
                     tool_defs.append(f"- **{tool['name']}**: {tool['description']}{param_str}")
                     ref_tools.append(tool)
-        
-        # Build full tool reference doc (only workspace/wiki tools)
+
         tool_ref = self._build_tool_reference(ref_tools)
-        
-        # Inject tool definitions into system prompt
         system_prompt = self.system_prompt.replace("{TOOL_DEFINITIONS}", "\n".join(tool_defs))
-        
-        # Initialize conversation with tool reference as a separate system message
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
-            {"role": "user", "content": task}
         ]
-        
-        # Add relevant wiki context
+
+        if plan:
+            messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
+
         wiki_context = self.context.get_relevant_context(task)
         if wiki_context:
             messages.insert(1, {"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
 
-        # Inject context blob from pipeline (context_load workflow)
+        kb_window = self.context.get_knowledge_window()
+        if kb_window:
+            messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
+
         if self.session_id:
             ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
             blob_file = ctx_path / self.session_id / "context-blob.md"
@@ -221,42 +419,42 @@ class CodingAgent:
                 blob = blob_file.read_text()
                 messages.insert(1, {"role": "system", "content": f"## Codebase Context\n\n{blob}"})
                 logger.info("Injected context blob from %s", blob_file)
-        
+
+        messages.append({"role": "user", "content": task})
+        tool_log = []
+
         for turn in range(config.agent.max_turns):
             logger.info(f"Turn {turn + 1}/{config.agent.max_turns}")
-            
+
             try:
                 response = await self.ollama.chat(messages, tool_schemas)
             except Exception as e:
                 logger.error(f"Ollama error: {e}")
                 return f"Error communicating with Ollama: {e}"
-            
+
             done_reason = response.get("done_reason", "")
             if done_reason == "length":
                 logger.warning(f"Response truncated due to context limit (turn {turn + 1})")
-            
+
             message = response.get("message", {})
             content = message.get("content", "") or ""
             thinking = message.get("thinking", "")
             tool_calls = message.get("tool_calls", [])
-            
+
             if not content and thinking:
                 content = thinking
-                logger.debug("Using thinking field as content (qwen3.5 CoT)")
-            
+
             if not content and not tool_calls:
-                logger.warning(f"Empty response from Ollama: response={json.dumps(response)[:500]}")
+                logger.warning(f"Empty response: {json.dumps(response)[:500]}")
             elif content:
                 logger.debug(f"Model content: {content[:300]}")
             if tool_calls:
-                logger.info(f"Native tool calls: {[tc['function']['name'] for tc in tool_calls]}")
+                logger.info(f"Tool calls: {[tc['function']['name'] for tc in tool_calls]}")
 
-            # Some models output tool calls as JSON text in content (fallback)
             parsed_tc = False
             if not tool_calls and content:
                 parsed_list = _parse_text_tool_calls(content)
                 if parsed_list:
-                    logger.info(f"Parsed {len(parsed_list)} tool call(s) from text: {[p['name'] for p in parsed_list]}")
                     parsed_tc = True
                     tool_calls = [{
                         "function": {
@@ -266,7 +464,6 @@ class CodingAgent:
                         "id": f"text_tc_{i}"
                     } for i, p in enumerate(parsed_list)]
 
-            # Add assistant message to history
             if content:
                 msg = {"role": "assistant", "content": content}
                 if tool_calls and not parsed_tc:
@@ -275,50 +472,54 @@ class CodingAgent:
                 self.context.add_message("assistant", content, tool_calls)
 
             if not tool_calls:
+                if not tool_log and (not content or len(content) < 20) and turn == 0:
+                    logger.info("Phase 2 returned empty in run() — retrying with tool prompt")
+                    messages.append({"role": "user", "content": "Use the workspace tools to complete your plan step by step. Call one tool at a time."})
+                    continue
                 logger.info("No tool calls - task complete")
-                return content
-            
+                return self._format_output(plan, tool_log, content)
+
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
                 func_args = tc["function"]["arguments"]
-                
+
                 if isinstance(func_args, str):
                     func_args = json.loads(func_args)
-                
-                # Auto-inject wiki doc on first use of this tool
+
                 if func_name not in self.wiki_injected:
                     wiki_doc = self._get_tool_wiki_doc(func_name)
                     if wiki_doc:
-                        logger.info(f"Injecting wiki docs for {func_name}")
                         wiki_msg = {"role": "system", "content": f"## {func_name} Documentation\n\n{wiki_doc}"}
                         messages.insert(-1, wiki_msg)
                     self.wiki_injected.add(func_name)
-                
+
                 logger.info(f"Executing: {func_name}({func_args})")
-                
+
                 try:
-                    result = await self.mcp.call_tool(func_name, func_args)
+                    if func_name == "workspace.write":
+                        result = self._write_file_directly(func_args["path"], func_args["content"])
+                        if result.get("success"):
+                            filepath = Path(config.workspace.path) / func_args["path"]
+                            self._fix_file_escaping(filepath)
+                    else:
+                        result = await self.mcp.call_tool(func_name, func_args)
                     result_str = json.dumps(result)
                     logger.info(f"Result: {result_str[:500]}")
-                    
                     messages.append({
-                        "role": "tool",
-                        "content": result_str,
-                        "tool_call_id": tc.get("id", "")
+                        "role": "user",
+                        "content": f"Result of {func_name}: {result_str}\n\nIf the task is not complete, output your next tool call as a JSON code block.",
                     })
                     self.context.add_message("tool", result_str, tool_call_id=tc.get("id", ""))
-                    
+                    tool_log.append(f"[{func_name}] {result_str[:400]}")
                 except Exception as e:
                     error_msg = f"Tool {func_name} failed: {e}"
                     logger.error(error_msg)
                     messages.append({
-                        "role": "tool",
-                        "content": json.dumps({"success": False, "error": str(e)}),
-                        "tool_call_id": tc.get("id", "")
+                        "role": "user",
+                        "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
                     })
-        
-        # If we ran tool calls on the last turn, give the model one more chance
-        # to produce a final answer based on the results (no new tools allowed)
+                    tool_log.append(f"[{func_name}] FAILED: {e}")
+
         if tool_calls:
             logger.info("Running final summary turn")
             try:
@@ -329,10 +530,10 @@ class CodingAgent:
                 if not content and thinking:
                     content = thinking
                 if content:
-                    return content
+                    return self._format_output(plan, tool_log, content)
             except Exception as e:
                 logger.error(f"Final turn error: {e}")
-        
+
         return "Max turns reached without completion"
 
     async def build_preamble(self) -> tuple[list, list]:
@@ -372,6 +573,13 @@ class CodingAgent:
             {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
         ]
 
+        # Inject accumulated knowledge window
+        kb_window = self.context.get_knowledge_window()
+        if kb_window:
+            messages.append(
+                {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"}
+            )
+
         if self.session_id:
             ctx_path = (
                 Path(config.context.path)
@@ -394,20 +602,43 @@ class CodingAgent:
         messages: list | None = None,
         tool_schemas: list | None = None,
     ) -> tuple[str, list]:
-        """Single user turn.  Returns (response_text, updated_messages)."""
+        """Single user turn. Returns (response_text, updated_messages)."""
+        route = self.router.classify(user_input)
+
+        if route == "direct":
+            msgs = [
+                {"role": "system", "content": self.direct_prompt},
+                {"role": "user", "content": user_input},
+            ]
+            response = await self.ollama.chat(msgs, [])
+            content = response.get("message", {}).get("content", "") or ""
+            return content, msgs
+
+        # Tool route — Phase 1: Plan
+        plan_msgs = [
+            {"role": "system", "content": self.plan_prompt},
+            {"role": "user", "content": user_input},
+        ]
+        plan_resp = await self.ollama.chat(plan_msgs, [])
+        plan = self._strip_plan_json(plan_resp.get("message", {}).get("content", "") or "")
+
+        # Phase 2: Execute
         if messages is None:
             messages, tool_schemas = await self.build_preamble()
 
+        if plan:
+            messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
+
         wiki_context = self.context.get_relevant_context(user_input)
         if wiki_context:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": f"## Reference Documentation\n\n{wiki_context}",
-                }
-            )
+            messages.append({"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
+
+        kb_window = self.context.get_knowledge_window()
+        if kb_window:
+            messages.append({"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
 
         messages.append({"role": "user", "content": user_input})
+        tool_log = []
 
         for turn in range(config.agent.max_turns):
             logger.info("Turn %d/%d", turn + 1, config.agent.max_turns)
@@ -420,9 +651,7 @@ class CodingAgent:
 
             done_reason = response.get("done_reason", "")
             if done_reason == "length":
-                logger.warning(
-                    "Response truncated due to context limit (turn %d)", turn + 1
-                )
+                logger.warning("Response truncated due to context limit (turn %d)", turn + 1)
 
             message = response.get("message", {})
             content = message.get("content", "") or ""
@@ -437,29 +666,20 @@ class CodingAgent:
             elif content:
                 logger.debug("Model content: %s", content[:300])
             if tool_calls:
-                logger.info(
-                    "Tool calls: %s",
-                    [tc["function"]["name"] for tc in tool_calls],
-                )
+                logger.info("Tool calls: %s", [tc["function"]["name"] for tc in tool_calls])
 
-            # Some models output tool calls as JSON text in content (fallback)
             parsed_tc = False
             if not tool_calls and content:
                 parsed_list = _parse_text_tool_calls(content)
                 if parsed_list:
                     parsed_tc = True
-                    tool_calls = [
-                        {
-                            "function": {
-                                "name": p["name"],
-                                "arguments": json.dumps(p["arguments"])
-                                if isinstance(p.get("arguments"), dict)
-                                else "{}",
-                            },
-                            "id": f"text_tc_{i}",
-                        }
-                        for i, p in enumerate(parsed_list)
-                    ]
+                    tool_calls = [{
+                        "function": {
+                            "name": p["name"],
+                            "arguments": json.dumps(p["arguments"]) if isinstance(p.get("arguments"), dict) else "{}",
+                        },
+                        "id": f"text_tc_{i}",
+                    } for i, p in enumerate(parsed_list)]
 
             if content:
                 msg = {"role": "assistant", "content": content}
@@ -469,8 +689,13 @@ class CodingAgent:
                 self.context.add_message("assistant", content, tool_calls)
 
             if not tool_calls:
+                if not tool_log and (not content or len(content) < 20) and turn == 0:
+                    logger.info("Phase 2 returned empty — retrying with tool prompt")
+                    messages.append({"role": "user", "content": "Use the workspace tools to complete your plan step by step. Call one tool at a time."})
+                    continue
                 logger.info("No tool calls — responding")
-                return content, messages
+                formatted = self._format_output(plan, tool_log, content)
+                return formatted, messages
 
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
@@ -482,39 +707,35 @@ class CodingAgent:
                     wiki_doc = self._get_tool_wiki_doc(func_name)
                     if wiki_doc:
                         logger.info("Injecting wiki docs for %s", func_name)
-                        wiki_msg = {
-                            "role": "system",
-                            "content": f"## {func_name} Documentation\n\n{wiki_doc}",
-                        }
+                        wiki_msg = {"role": "system", "content": f"## {func_name} Documentation\n\n{wiki_doc}"}
                         messages.insert(-1, wiki_msg)
                     self.wiki_injected.add(func_name)
 
                 logger.info("Executing: %s(%s)", func_name, func_args)
                 try:
-                    result = await self.mcp.call_tool(func_name, func_args)
+                    if func_name == "workspace.write":
+                        result = self._write_file_directly(func_args["path"], func_args["content"])
+                        if result.get("success"):
+                            filepath = Path(config.workspace.path) / func_args["path"]
+                            self._fix_file_escaping(filepath)
+                    else:
+                        result = await self.mcp.call_tool(func_name, func_args)
                     result_str = json.dumps(result)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "content": result_str,
-                            "tool_call_id": tc.get("id", ""),
-                        }
-                    )
-                    self.context.add_message(
-                        "tool", result_str, tool_call_id=tc.get("id", "")
-                    )
+                    messages.append({
+                        "role": "user",
+                        "content": f"Result of {func_name}: {result_str}\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                    })
+                    self.context.add_message("tool", result_str, tool_call_id=tc.get("id", ""))
+                    tool_log.append(f"[{func_name}] {result_str[:400]}")
                 except Exception as e:
                     error_msg = f"Tool {func_name} failed: {e}"
                     logger.error(error_msg)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "content": json.dumps(
-                                {"success": False, "error": str(e)}
-                            ),
-                            "tool_call_id": tc.get("id", ""),
-                        }
-                    )
+                    messages.append({
+                        "role": "user",
+                        "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                        "tool_call_id": tc.get("id", ""),
+                    })
+                    tool_log.append(f"[{func_name}] FAILED: {e}")
 
         if tool_calls:
             logger.info("Running final summary turn")
@@ -526,7 +747,8 @@ class CodingAgent:
                 if not content and thinking:
                     content = thinking
                 if content:
-                    return content, messages
+                    formatted = self._format_output(plan, tool_log, content)
+                    return formatted, messages
             except Exception as e:
                 logger.error("Final turn error: %s", e)
 
@@ -591,6 +813,15 @@ async def main():
             files = log_result.get("files_touched", [])
             if files:
                 print(f"  Files touched: {len(files)}")
+
+        # Ingest session log into windowed knowledge
+        out_file = log_result.get("output_file")
+        if out_file:
+            ingested = agent.context.ingest_session_log(out_file)
+            if ingested:
+                print(f"  Knowledge chunks accumulated: {ingested}")
+        agent.context.persist_knowledge()
+        print(f"  Total knowledge chunks: {agent.context.knowledge.count()}")
     finally:
         await agent.close()
 

@@ -20,24 +20,18 @@ import (
 
 const (
 	ScoutPort         = ":8080"
-	BinDir            = "/home/scout/projects/workers/scout/bin"
-	CGIDir            = "/home/scout/projects/workers/scout/cgi-bin"
-	ContextsDir       = "/home/scout/projects/workers/scout/contexts"
-	LocksDir          = "/home/scout/projects/workers/scout/locks"
-	LogsDir           = "/home/scout/projects/workers/scout/logs"
-	ManifestsDir      = "/home/scout/projects/workers/scout/manifests"
-	SessionsDir       = "/home/scout/projects/workers/scout/sessions"
+	SessionsDir       = "/home/scout/projects/sandbox/scout/sessions"
 	DefaultSessionTTL = 3600
 	SessionCookieName = "scout_session"
 )
 
 type Session struct {
-	ID          string         `json:"id"`
-	Created     int64          `json:"created"`
-	TTL         int            `json:"ttl"`
-	LastAccess  int64          `json:"last_access"`
-	Data        map[string]any `json:"data"`
-	mu          sync.Mutex
+	ID         string         `json:"id"`
+	Created    int64          `json:"created"`
+	TTL        int            `json:"ttl"`
+	LastAccess int64          `json:"last_access"`
+	Data       map[string]any `json:"data"`
+	mu         sync.Mutex
 }
 
 func (s *Session) IsExpired() bool {
@@ -71,50 +65,10 @@ type Server struct {
 	clients    map[chan Event]bool
 }
 
-type StatusResponse struct {
-	ServerTime      int64                   `json:"server_time"`
-	ActiveSessions  int                     `json:"active_sessions"`
-	CurrentRound    *RoundStatus            `json:"current_round,omitempty"`
-	Workers         map[string]WorkerState  `json:"workers"`
-	LastVerdict     *JudgeVerdict           `json:"last_verdict,omitempty"`
-}
-
-type RoundStatus struct {
-	Limit     uint64                    `json:"limit"`
-	Stage     string                    `json:"stage"`
-	StartedAt int64                     `json:"started_at"`
-	Workers   map[string]WorkerState    `json:"workers"`
-}
-
-type WorkerState struct {
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	Limit        uint64 `json:"limit,omitempty"`
-	StartedAt    int64  `json:"started_at,omitempty"`
-	CompletedAt  int64  `json:"completed_at,omitempty"`
-	Primes       uint64 `json:"primes,omitempty"`
-	DurationMs   int64  `json:"duration_ms,omitempty"`
-	KATHash      string `json:"kat_hash,omitempty"`
-	Error        string `json:"error,omitempty"`
-}
-
-type JudgeVerdict struct {
-	Winner     string   `json:"winner"`
-	Mutations  []string `json:"mutations"`
-	Analysis   string   `json:"analysis"`
-	Confidence float64  `json:"confidence"`
-	Round      uint64   `json:"round"`
-	Timestamp  int64    `json:"timestamp"`
-}
-
 func main() {
-	for _, d := range []string{BinDir, CGIDir, ContextsDir, LocksDir, LogsDir, ManifestsDir, SessionsDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			log.Fatalf("mkdir %s: %v", d, err)
-		}
+	if err := os.MkdirAll(SessionsDir, 0755); err != nil {
+		log.Fatalf("mkdir %s: %v", SessionsDir, err)
 	}
-
-	initContexts()
 
 	s := &Server{
 		sessions: make(map[string]*Session),
@@ -132,15 +86,6 @@ func main() {
 
 	log.Printf("Scout CGI MCP server starting on %s", ScoutPort)
 	log.Fatal(http.ListenAndServe(ScoutPort, nil))
-}
-
-func initContexts() {
-	for _, ctx := range []string{"baseline", "judge", "worker1", "worker2"} {
-		ctxDir := filepath.Join(ContextsDir, ctx)
-		if _, err := os.Stat(filepath.Join(ctxDir, ".git")); os.IsNotExist(err) {
-			os.MkdirAll(ctxDir, 0755)
-		}
-	}
 }
 
 func (s *Server) getSession(r *http.Request) (*Session, bool) {
@@ -234,7 +179,7 @@ func (s *Server) cgiHandler(w http.ResponseWriter, r *http.Request) {
 
 	env := s.buildCGIEnv(r, session, toolPath)
 
-	scriptPath := filepath.Join(CGIDir, toolPath)
+	scriptPath := filepath.Join("/home/scout/projects/sandbox/scout/cgi-bin", toolPath)
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		http.Error(w, "Tool not found", http.StatusNotFound)
 		return
@@ -245,14 +190,11 @@ func (s *Server) cgiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bodyBytes, _ := io.ReadAll(r.Body)
-	log.Printf("CGI read body [%s]: %d bytes: %s", toolPath, len(bodyBytes), string(bodyBytes))
 
 	cmd := exec.Command(scriptPath)
 	cmd.Env = env
-	cmd.Dir = CGIDir
+	cmd.Dir = filepath.Dir(scriptPath)
 	cmd.Stdin = bytes.NewReader(bodyBytes)
-
-	log.Printf("CGI env [%s]: SCOUT_BIN_DIR=%s SCOUT_MANIFEST_DIR=%s", toolPath, getenv(env, "SCOUT_BIN_DIR"), getenv(env, "SCOUT_MANIFEST_DIR"))
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -270,27 +212,19 @@ func (s *Server) cgiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("CGI started [%s], pid=%d", toolPath, cmd.Process.Pid)
-
 	var stdoutData, stderrData []byte
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		stdoutData, _ = io.ReadAll(stdout)
-		log.Printf("CGI stdout read done [%s]: %d bytes", toolPath, len(stdoutData))
 	}()
 	go func() {
 		defer wg.Done()
 		stderrData, _ = io.ReadAll(stderr)
-		log.Printf("CGI stderr read done [%s]: %d bytes", toolPath, len(stderrData))
 	}()
 	wg.Wait()
-
-	log.Printf("CGI wait done [%s]", toolPath)
 	cmd.Wait()
-
-	log.Printf("CGI exited [%s]: exitCode=%d", toolPath, cmd.ProcessState.ExitCode())
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(stdoutData)
@@ -316,11 +250,6 @@ func (s *Server) buildCGIEnv(r *http.Request, session *Session, toolPath string)
 	env = append(env,
 		"SCOUT_SESSION_ID="+session.ID,
 		"SCOUT_SESSION_TTL="+strconv.Itoa(session.TTL),
-		"SCOUT_BIN_DIR="+BinDir,
-		"SCOUT_MANIFEST_DIR="+ManifestsDir,
-		"SCOUT_CONTEXTS_DIR="+ContextsDir,
-		"SCOUT_LOCKS_DIR="+LocksDir,
-		"SCOUT_LOGS_DIR="+LogsDir,
 		"REQUEST_METHOD="+r.Method,
 		"QUERY_STRING="+r.URL.RawQuery,
 		"CONTENT_TYPE="+r.Header.Get("Content-Type"),
@@ -337,16 +266,11 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	activeSessions := len(s.sessions)
 	s.sessionsMu.RUnlock()
 
-	resp := StatusResponse{
-		ServerTime:     time.Now().UnixMilli(),
-		ActiveSessions: activeSessions,
-		Workers:        getWorkerStates(),
-		CurrentRound:   getCurrentRound(),
-		LastVerdict:    getLastVerdict(),
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(map[string]any{
+		"server_time":     time.Now().UnixMilli(),
+		"active_sessions": activeSessions,
+	})
 }
 
 func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -424,29 +348,4 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func mustJSON(v any) string {
 	data, _ := json.Marshal(v)
 	return string(data)
-}
-
-func getWorkerStates() map[string]WorkerState {
-	return map[string]WorkerState{
-		"w1_baseline":       {Name: "w1_baseline", Status: "idle"},
-		"w2_wheel2310":      {Name: "w2_wheel2310", Status: "idle"},
-		"w3_seq_cacheopt":   {Name: "w3_seq_cacheopt", Status: "idle"},
-	}
-}
-
-func getCurrentRound() *RoundStatus {
-	return nil
-}
-
-func getLastVerdict() *JudgeVerdict {
-	return nil
-}
-
-func getenv(env []string, key string) string {
-	for _, e := range env {
-		if strings.HasPrefix(e, key+"=") {
-			return strings.TrimPrefix(e, key+"=")
-		}
-	}
-	return ""
 }

@@ -31,7 +31,7 @@ An LLM-powered coding agent that runs on a **Linux host** (scout) and uses **Oll
 │  │  Scout CGI MCP Server (Go :8080)                       │   │
 │  │  ├─ mcp/tools/list.sh   (tool registry)                │   │
 │  │  ├─ mcp/tools/call.sh   (tool dispatcher)              │   │
-│  │  ├─ workspace/*.sh      (8 CGI tool scripts)           │   │
+│   │  ├─ workspace/*.py       (8 CGI tool scripts)           │   │
 │  │  └─ /health, /status, /events                          │   │
 │  └────────────────────────────────────────────────────────┘   │
 │            │                                                  │
@@ -87,23 +87,20 @@ mcp_poc/                          # Python agent (PoC)
 scout/                            # Scout CGI server (Go)
 ├── bin/scout                     # Compiled server binary (port 8080)
 ├── scout.go                      # Source — CGI handler, sessions, HTTP routing
-├── start_scout.sh                # Init script (arena-focused — use manual start)
+├── start_scout.sh                # Init script
 ├── cgi-bin/
 │   ├── mcp/tools/
 │   │   ├── list.sh               # Tool definitions (8 workspace/wiki tools)
 │   │   └── call.sh               # Routes tool name → workspace/*.sh script
 │   └── workspace/
-│       ├── list.sh               # workspace.list — list directory
-│       ├── read.sh               # workspace.read — read file
-│       ├── write.sh              # workspace.write — write file
-│       ├── delete.sh             # workspace.delete — remove file/dir
-│       ├── compile.sh            # workspace.compile — build code (go, python, c, cpp, rust)
-│       ├── run.sh                # workspace.run — execute binary/script
-│       ├── search.sh             # workspace.search — grep code
-│       └── wiki_lookup.sh        # wiki.lookup — docs lookup
-├── contexts/arena/               # (Legacy — arena sandboxes, not used by PoC)
-├── locks/                        # Flock-based mutexes
-├── logs/                         # Server logs
+│       ├── list.py               # workspace.list — list directory
+│       ├── read.py               # workspace.read — read file
+│       ├── write.py              # workspace.write — write file
+│       ├── delete.py             # workspace.delete — remove file/dir
+│       ├── compile.py            # workspace.compile — build code (go, python, c, cpp, rust)
+│       ├── run.py                # workspace.run — execute binary/script
+│       ├── search.py             # workspace.search — grep code
+│       └── wiki_lookup.py        # wiki.lookup — docs lookup
 └── sessions/                     # Session state (JSON files)
 
 workspace/                        # Agent workspace root
@@ -150,7 +147,7 @@ All commands run on the **scout (Linux host)** unless noted.
 ### 1. Start Scout CGI Server
 
 ```bash
-cd /home/scout/projects/workers/scout
+cd /home/scout/projects/sandbox/scout
 nohup ./bin/scout > scout.log 2>&1 &
 ```
 

@@ -51,8 +51,22 @@
       "wiki_file": "tools/delete_file.md"
     },
     {
+      "name": "workspace.run",
+      "description": "Run code: auto-compiles C/Go/Rust, executes Python/bash scripts and binaries",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Source file or binary path"},
+          "args": {"type": "array", "items": {"type": "string"}, "default": []},
+          "timeout": {"type": "integer", "default": 30}
+        },
+        "required": ["path"]
+      },
+      "wiki_file": "tools/run.md"
+    },
+    {
       "name": "workspace.compile",
-      "description": "Compile source code (Go, Python, C, C++, Rust)",
+      "description": "Compile source code (optional — workspace.run auto-compiles)",
       "parameters": {
         "type": "object",
         "properties": {
@@ -62,20 +76,6 @@
         "required": ["path"]
       },
       "wiki_file": "tools/compile.md"
-    },
-    {
-      "name": "workspace.run",
-      "description": "Execute binary or script in workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "description": "Executable/script path"},
-          "args": {"type": "array", "items": {"type": "string"}, "default": []},
-          "timeout": {"type": "integer", "default": 30}
-        },
-        "required": ["path"]
-      },
-      "wiki_file": "tools/run.md"
     },
     {
       "name": "workspace.search",

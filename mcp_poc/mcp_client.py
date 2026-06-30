@@ -6,7 +6,7 @@ from config import config
 class MCPClient:
     def __init__(self):
         self.base_url = config.scout.base_url
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=120.0)
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         response = await self.client.post(

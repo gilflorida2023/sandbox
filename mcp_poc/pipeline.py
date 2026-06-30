@@ -617,7 +617,12 @@ async def _main():
         # Compact status line
         sid = result.get("session_id", pipe.session_id)
         files = result.get("files_summarized") or result.get("files_analyzed") or []
-        suffix = f"  [green]✓[/green] {len(files)} files" if files else ""
+        chunks = result.get("chunks_ingested")
+        parts = filter(None, [
+            f"[green]✓[/green] {len(files)} files" if files else None,
+            f"[green]✓[/green] {chunks} chunks" if chunks is not None else None,
+        ])
+        suffix = f"  {'  '.join(parts)}" if parts else ""
         console.print(f"[dim]session[/dim] {sid}  [dim]workflow[/dim] {args.workflow}{suffix}")
     except KeyboardInterrupt:
         print("\nInterrupted. Session can be resumed with --session-id %s --resume",

@@ -6,7 +6,7 @@ scout:
 ollama:
   host: "localhost"
   port: 11434
-  model: "huihui_ai/qwen3.5-abliterated:9b"
+  model: "glm4:9b"
   timeout: 600
 
 workspace:
