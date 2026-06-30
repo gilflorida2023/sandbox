@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 from pathlib import Path
+from typing import Optional
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,7 +16,10 @@ from tool_wiki import ToolWiki
 from context_manager import ContextManager
 from session_log import SessionLogger
 from router import QueryRouter
+from tunnel_manager import TunnelManager
 
+# Setup logging to workspace/.session-log with relative path from workspace
+import os
 log_dir = Path(config.workspace.path) / ".session-log"
 log_dir.mkdir(parents=True, exist_ok=True)
 root = logging.getLogger()
@@ -128,14 +132,14 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
 
 
 class CodingAgent:
-    def __init__(self, session_id: str = ""):
+    def __init__(self, session_id: str = "", tunnel_manager: Optional[TunnelManager] = None):
         self.mcp = MCPClient()
-        self.ollama = OllamaClient()
+        self.ollama = OllamaClient(tunnel_manager=tunnel_manager)
         self.wiki = ToolWiki()
         self.context = ContextManager(self.wiki)
-        self.system_prompt = Path("prompts/system_prompt.txt").read_text()
-        self.direct_prompt = Path("prompts/direct_prompt.txt").read_text()
-        self.plan_prompt = Path("prompts/plan_prompt.txt").read_text()
+        self.system_prompt = (Path(__file__).parent / "prompts/system_prompt.txt").read_text()
+        self.direct_prompt = (Path(__file__).parent / "prompts/direct_prompt.txt").read_text()
+        self.plan_prompt = (Path(__file__).parent / "prompts/plan_prompt.txt").read_text()
         self.router = QueryRouter()
         self.learned_tools = set()
         self.wiki_injected = set()
