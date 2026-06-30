@@ -8,17 +8,12 @@ results/
 scout/sessions/
 scout/locks/
 scout/contexts/
-
-# Session knowledge logs
-workspace/.session-log/
-
-# Pipeline working memory
-workspace/.context/
+workspace/
+workspace/*.*
 
 # Python cache
 __pycache__/
 *.pyc
-workspace/simplesieve
 
 # Go compiled binaries (built from main.go, named after parent dir)
 services/ollama_client/ollama_client
