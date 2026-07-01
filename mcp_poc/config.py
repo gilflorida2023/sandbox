@@ -59,6 +59,29 @@ class ContextConfig:
     path: str = ""
 
 @dataclass
+class SessionConfig:
+    storage_path: str = ""
+    max_summary_tokens: int = 300
+    keep_recent_turns: int = 4
+    score_threshold: float = 0.55
+
+@dataclass
+class CorrectionConfig:
+    storage_path: str = ""
+    max_corrections: int = 50
+
+@dataclass
+class TaskConfig:
+    storage_path: str = ""
+    max_tasks: int = 100
+
+@dataclass
+class Phase3Config:
+    session: SessionConfig = field(default_factory=SessionConfig)
+    correction: CorrectionConfig = field(default_factory=CorrectionConfig)
+    task: TaskConfig = field(default_factory=TaskConfig)
+
+@dataclass
 class Config:
     scout: ScoutConfig = field(default_factory=ScoutConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -67,6 +90,7 @@ class Config:
     context: ContextConfig = field(default_factory=ContextConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+    phase3: Phase3Config = field(default_factory=Phase3Config)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -95,6 +119,18 @@ class Config:
             config.embedding = EmbeddingConfig(**data["embedding"])
         if "vector_store" in data:
             config.vector_store = VectorStoreConfig(**data["vector_store"])
+        if "phase3" in data:
+            p3 = data["phase3"]
+            session_data = p3.pop("session", {})
+            correction_data = p3.pop("correction", {})
+            task_data = p3.pop("task", {})
+            config.phase3 = Phase3Config(**p3)
+            if session_data:
+                config.phase3.session = SessionConfig(**session_data)
+            if correction_data:
+                config.phase3.correction = CorrectionConfig(**correction_data)
+            if task_data:
+                config.phase3.task = TaskConfig(**task_data)
         return config
 
 config = Config.from_yaml("/home/scout/projects/sandbox/mcp_poc/config.yaml")

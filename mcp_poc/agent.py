@@ -14,6 +14,7 @@ import logging
 from typing import Optional
 import hashlib
 import time
+from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -29,6 +30,11 @@ from tunnel_manager import TunnelManager
 from embedding_service import EmbeddingService
 from vector_store import VectorStore
 from knowledge_indexer import KnowledgeIndexer
+from session_state import SessionState
+from conversation_summarizer import ConversationSummarizer
+from context_stitcher import ContextStitcher
+from task_store import TaskStore
+from correction_store import CorrectionStore
 
 # Dual-mode system constants
 PLAN_MODE = "PLAN"
@@ -202,6 +208,24 @@ class CodingAgent:
             blacklist_regex=config.agent.knowledge.blacklist_regex or None,
             knowledge_indexer=self.knowledge_indexer,
         )
+        
+        # Initialize Phase 3 components
+        self.session_state = SessionState.resume(config.workspace.path, 
+                                                 session_id if session_id else str(int(time.time())))
+        self.session_summarizer = ConversationSummarizer(
+            ollama_client=self.ollama,
+            max_summary_tokens=config.phase3.session.max_summary_tokens,
+            keep_recent_turns=config.phase3.session.keep_recent_turns,
+        )
+        self.correction_store = CorrectionStore(config.phase3.correction.storage_path)
+        self.task_store = TaskStore(config.phase3.task.storage_path)
+        
+        # Configure ContextStitcher with Phase 3 components
+        self.context_stitcher = ContextStitcher(
+            vector_store=self.vector_store,
+            embedding_service=self.embed_service,
+        )
+        
         self.system_prompt = (Path(__file__).parent / "prompts/system_prompt.txt").read_text()
         self.direct_prompt = (Path(__file__).parent / "prompts/direct_prompt.txt").read_text()
         self.plan_prompt = (Path(__file__).parent / "prompts/plan_prompt.txt").read_text()
@@ -662,6 +686,18 @@ class CodingAgent:
         if kb_window:
             messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
 
+        # Phase 3: Context stitching from previous sessions
+        if self.session_id and config.phase3.session.score_threshold is not None:
+            # Add session context stitching
+            session_context = self.context_stitcher.get_session_context(
+                user_query=task,
+                max_tokens=config.agent.context.session_tokens,
+                score_threshold=config.phase3.session.score_threshold
+            )
+            if session_context:
+                messages.insert(1, {"role": "system", "content": session_context})
+                logger.info("Injected session context (stitched from previous sessions)")
+
         if self.session_id:
             ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
             blob_file = ctx_path / self.session_id / "context-blob.md"
@@ -889,6 +925,18 @@ class CodingAgent:
         kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.append({"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
+
+        # Phase 3: Context stitching from previous sessions
+        if self.session_id and config.phase3.session.score_threshold is not None:
+            # Add session context stitching
+            session_context = self.context_stitcher.get_session_context(
+                user_query=user_input,
+                max_tokens=config.agent.context.session_tokens,
+                score_threshold=config.phase3.session.score_threshold
+            )
+            if session_context:
+                messages.append({"role": "system", "content": session_context})
+                logger.info("Injected session context (stitched from previous sessions)")
 
         messages.append({"role": "user", "content": user_input})
         tool_log = []

@@ -46,3 +46,16 @@ vector_store:
 
 context:
   path: "/home/scout/projects/sandbox/workspace/.context"
+
+phase3:
+  session:
+    storage_path: "/home/scout/projects/sandbox/workspace/.session_state"
+    max_summary_tokens: 300
+    keep_recent_turns: 4
+    score_threshold: 0.55
+
+  correction:
+    storage_path: "/home/scout/projects/sandbox/workspace/.corrections"
+
+  task:
+    storage_path: "/home/scout/projects/sandbox/workspace/.tasks"
