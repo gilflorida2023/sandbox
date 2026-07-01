@@ -57,6 +57,7 @@ An LLM-powered coding agent that runs on a **Linux host** (scout) and uses **Oll
 6. **Tool results** are appended to the conversation and sent back to Ollama for the next turn
 7. Loop continues until Ollama returns a natural language response (no tool call)
 8. Session is logged, knowledge chunks are extracted and held in the approval gate for user review
+9. Approved chunks are embedded via `nomic-embed-text` and indexed in Qdrant for future semantic retrieval
 
 ### Current Limitations vs. Classical MCP
 
@@ -88,13 +89,19 @@ mcp_poc/                          # Python agent (PoC)
 ├── user_approval.py              # Approval manager for knowledge chunks
 ├── session_log.py                # Session log extraction + persistence
 ├── router.py                     # Query router (direct answer vs. tool route)
+├── embedding_service.py          # Ollama /api/embed wrapper with LRU cache
+├── vector_store.py               # Qdrant in-process vector store (persisted to disk)
+├── knowledge_indexer.py          # Chunk wiki docs, embed, index; semantic search
 ├── prompts/system_prompt.txt     # Agent system instructions
 ├── tests/                        # Unit tests
 │   ├── test_config.py
 │   ├── test_context_manager.py
 │   ├── test_windowed_context_db.py
-│   └── test_user_approval.py
-├── requirements.txt              # Python dependencies (mcp, httpx, pyyaml, rich)
+│   ├── test_user_approval.py
+│   ├── test_embedding_service.py
+│   ├── test_vector_store.py
+│   └── test_knowledge_indexer.py
+├── requirements.txt              # Python dependencies (mcp, httpx, pyyaml, rich, qdrant-client)
 └── venv/                         # Virtual environment
 
 scout/                            # Scout CGI server (Go)
@@ -151,6 +158,12 @@ Pull a tool-capable model on the Mac:
 
 ```bash
 ollama pull qwen2.5-coder:7b
+```
+
+For semantic search (Phase 2), pull a lightweight embedding model:
+
+```bash
+ollama pull nomic-embed-text
 ```
 
 ## Start Commands
@@ -244,6 +257,7 @@ python repl.py
 | `/approve <id>` | Approve a pending knowledge chunk |
 | `/reject <id>` | Reject a pending knowledge chunk |
 | `/blacklist <pattern>` | Add contamination pattern at runtime (`re:` prefix = regex) |
+| `/search <query>` | Semantic search across wiki docs and accumulated knowledge |
 | `exit` / `quit` | Exit the REPL |
 
 ## Available Tools
@@ -261,7 +275,7 @@ python repl.py
 
 ## Context Management
 
-The agent manages context across three layers to prevent contamination and enforce token budgets.
+The agent manages context across four layers to prevent contamination, enforce token budgets, and enable semantic retrieval.
 
 ### Token Budget
 
@@ -290,32 +304,52 @@ Knowledge chunks extracted from session logs are held in a pending queue instead
 
 This prevents "poison pills" (incorrect or harmful facts) from persisting without consent. The gate can be disabled by setting `require_user_approval: false` in config.yaml.
 
+### Semantic Search (Phase 2)
+
+Wiki docs and approved knowledge chunks are embedded using `nomic-embed-text` (768-dim vectors via Ollama's `/api/embed`) and stored in a local Qdrant vector store (in-process mode, persisted to `workspace/.context/vectors/`).
+
+During context assembly, the agent runs a semantic search alongside the keyword-based lookup. Results from both are merged into the context window under the token budget. This captures conceptually relevant docs even when keyword terms don't match exactly.
+
+**REPL command:**
+```
+/search how do I compile C code
+```
+
+**Indexing is automatic:**
+- Wiki tool/guide docs are chunked by heading and indexed on agent startup (~60 chunks)
+- Approved knowledge chunks are indexed as they're stored
+- Semantic search runs on every `get_relevant_context()` call with a `score_threshold >= 0.4`
+
 ### Architecture
 
 ```
 User Input
     │
     ▼
-┌─────────────────────────────────────┐
-│       Context Budget Manager        │
-│  max_context_tokens = 2000          │
-│  ├─ Wiki docs (tool + guides)       │
-│  ├─ Knowledge chunks (query match)  │
-│  └─ Accumulated Knowledge (window)  │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────┐
+│       Context Budget Manager            │
+│  max_context_tokens = 2000              │
+│  ├─ Wiki docs (keyword match)           │
+│  ├─ Knowledge chunks (keyword match)    │
+│  ├─ Semantic search (embedding match)   │
+│  └─ Accumulated Knowledge (window)      │
+└──────────────┬──────────────────────────┘
                │
                ▼
-┌─────────────────────────────────────┐
-│       ApprovalManager               │
-│  Pending → /approve | /reject       │
-│  Contamination blacklist enforced   │
-└──────────────┬──────────────────────┘
-               │ (approved only)
-               ▼
-┌─────────────────────────────────────┐
-│    WindowedContextDB (SQLite+FTS5)  │
-│  Deduped, weighted, persistent      │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│       ApprovalManager                   │
+│  Pending → /approve | /reject           │
+│  Contamination blacklist enforced       │
+└──────────────┬──────────────────────────┘
+       │                      │
+       ▼                      ▼
+┌──────────────┐    ┌──────────────────┐
+│ WindowedDB   │    │ KnowledgeIndexer │
+│ (SQLite+FTS5)│    │ (Qdrant vectors) │
+│ Deduped,     │    │ nomic-embed-text │
+│ weighted,    │    │ semantic search  │
+│ persistent   │    │ /search <query>  │
+└──────────────┘    └──────────────────┘
 ```
 
 ## Query Router
@@ -488,6 +522,15 @@ agent:
     conversation_tokens: 500
     knowledge_tokens: 500
     task_tokens: 500
+
+embedding:
+  model: "nomic-embed-text"
+  host: "localhost"
+  port: 11434
+
+vector_store:
+  storage_path: "/home/scout/projects/sandbox/workspace/.context/vectors"
+  embedding_dim: 768
 ```
 
 ### Config Fields
@@ -503,3 +546,8 @@ agent:
 | `agent.knowledge.blacklist_regex` | `[]` | Regex contamination patterns |
 | `agent.knowledge.max_chunks_per_session` | `50` | Max chunks per ingestion batch |
 | `agent.context.*_tokens` | `500` | Per-section token budgets (reserved) |
+| `embedding.model` | `nomic-embed-text` | Embedding model for semantic search |
+| `embedding.host` | `localhost` | Ollama host for embeddings |
+| `embedding.port` | `11434` | Ollama port for embeddings |
+| `vector_store.storage_path` | `workspace/.context/vectors` | Qdrant persistence path |
+| `vector_store.embedding_dim` | `768` | Vector dimension (nomic-embed-text = 768) |
