@@ -32,4 +32,6 @@ class QueryRouter:
             if re.search(rf"\b{re.escape(kw)}\b", q):
                 direct_score += 1
 
+        if tool_score == 0 and direct_score == 0:
+            return "direct"
         return "tool" if tool_score >= direct_score else "direct"

@@ -47,11 +47,16 @@ An LLM-powered coding agent that runs on a **Linux host** (scout) and uses **Oll
 ### Data Flow
 
 1. **User** gives a task to the Python agent
-2. **Agent** sends conversation (system prompt + user task + history) to Ollama via `/api/chat`
-3. **Ollama** reasons and either returns text (answer) or a tool call as JSON in `content`
-4. **Agent** parses tool calls, executes them via Scout's CGI MCP tools (`POST /cgi-bin/mcp/tools/call.sh`)
-5. **Tool results** are appended to the conversation and sent back to Ollama for the next turn
-6. Loop continues until Ollama returns a natural language response (no tool call)
+2. **QueryRouter** classifies the input: `direct` (trivial) or `tool` (needs workspace)
+3. For `direct` queries, Ollama answers immediately with the direct prompt — no tools involved
+4. For `tool` queries, the agent generates a plan, then enters the execute loop:
+   - **Agent** sends conversation (system prompt + plan + context + history) to Ollama via `/api/chat`
+   - If the model supports tool calling (detected via `GET /api/tags` capabilities), tools are included in the payload
+   - **Ollama** reasons and returns text (answer) or tool calls
+5. **Agent** parses tool calls, executes them via Scout's CGI MCP tools (`POST /cgi-bin/mcp/tools/call.sh`)
+6. **Tool results** are appended to the conversation and sent back to Ollama for the next turn
+7. Loop continues until Ollama returns a natural language response (no tool call)
+8. Session is logged, knowledge chunks are extracted and held in the approval gate for user review
 
 ### Current Limitations vs. Classical MCP
 
@@ -79,8 +84,16 @@ mcp_poc/                          # Python agent (PoC)
 ├── mcp_client.py                 # HTTP client → Scout CGI /mcp/tools
 ├── ollama_client.py              # HTTP client → Ollama /api/chat
 ├── tool_wiki.py                  # Wiki index + tool/guide doc loader
-├── context_manager.py            # Conversation history + context extraction
+├── context_manager.py            # Conversation history + context extraction + approval gate
+├── user_approval.py              # Approval manager for knowledge chunks
+├── session_log.py                # Session log extraction + persistence
+├── router.py                     # Query router (direct answer vs. tool route)
 ├── prompts/system_prompt.txt     # Agent system instructions
+├── tests/                        # Unit tests
+│   ├── test_config.py
+│   ├── test_context_manager.py
+│   ├── test_windowed_context_db.py
+│   └── test_user_approval.py
 ├── requirements.txt              # Python dependencies (mcp, httpx, pyyaml, rich)
 └── venv/                         # Virtual environment
 
@@ -199,6 +212,13 @@ python agent.py "Your coding task here"
 
 ## Usage Examples
 
+### Single Task
+
+```bash
+cd /home/scout/projects/sandbox/mcp_poc
+python agent.py "List files in workspace"
+```
+
 | Command | What Happens |
 |---------|-------------|
 | `python agent.py "List files in workspace"` | Calls `workspace.list` |
@@ -206,6 +226,25 @@ python agent.py "Your coding task here"
 | `python agent.py "Create hello.py that prints Fibonacci"` | Calls `workspace.write` then `workspace.run` |
 | `python agent.py "Search for 'TODO' in workspace"` | Calls `workspace.search` |
 | `python agent.py "Read hello.py and explain it"` | Calls `workspace.read` |
+
+### Interactive REPL
+
+```bash
+cd /home/scout/projects/sandbox/mcp_poc
+python repl.py
+```
+
+**REPL commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/plan` | Switch to read-only PLAN mode |
+| `/build` | Switch to read/write BUILD mode |
+| `/pending` | List knowledge chunks awaiting approval |
+| `/approve <id>` | Approve a pending knowledge chunk |
+| `/reject <id>` | Reject a pending knowledge chunk |
+| `/blacklist <pattern>` | Add contamination pattern at runtime (`re:` prefix = regex) |
+| `exit` / `quit` | Exit the REPL |
 
 ## Available Tools
 
@@ -219,6 +258,80 @@ python agent.py "Your coding task here"
 | `workspace.run` | Execute a binary or script |
 | `workspace.search` | Search code with grep |
 | `wiki.lookup` | Look up tool or guide documentation |
+
+## Context Management
+
+The agent manages context across three layers to prevent contamination and enforce token budgets.
+
+### Token Budget
+
+All injected context (wiki docs, knowledge chunks, accumulated knowledge) is capped at `max_context_tokens` (default: 2000). Each section is progressively truncated to fit the budget. Warning logs are emitted when truncation occurs.
+
+### Contamination Blacklist
+
+Keywords that indicate contaminated or noisy knowledge are filtered before storage. The blacklist supports two modes:
+
+- **Substring matching** — entries in the `blacklist` list are matched as case-insensitive substrings
+- **Regex matching** — entries in the `blacklist_regex` list are matched as compiled regex patterns
+
+Both lists can be extended at runtime via the `/blacklist` REPL command. Use the `re:` prefix for regex patterns:
+
+```
+/blacklist re:sieve\s+of
+```
+
+### User Approval Gate
+
+Knowledge chunks extracted from session logs are held in a pending queue instead of being stored directly into the knowledge database. The user reviews and decides:
+
+- `/pending` — list all pending chunks
+- `/approve <id>` — store the chunk in persistent knowledge
+- `/reject <id>` — discard the chunk
+
+This prevents "poison pills" (incorrect or harmful facts) from persisting without consent. The gate can be disabled by setting `require_user_approval: false` in config.yaml.
+
+### Architecture
+
+```
+User Input
+    │
+    ▼
+┌─────────────────────────────────────┐
+│       Context Budget Manager        │
+│  max_context_tokens = 2000          │
+│  ├─ Wiki docs (tool + guides)       │
+│  ├─ Knowledge chunks (query match)  │
+│  └─ Accumulated Knowledge (window)  │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│       ApprovalManager               │
+│  Pending → /approve | /reject       │
+│  Contamination blacklist enforced   │
+└──────────────┬──────────────────────┘
+               │ (approved only)
+               ▼
+┌─────────────────────────────────────┐
+│    WindowedContextDB (SQLite+FTS5)  │
+│  Deduped, weighted, persistent      │
+└─────────────────────────────────────┘
+```
+
+## Query Router
+
+The `router.py` module (`QueryRouter`) classifies each user input into one of two routes:
+
+- **`direct`** — trivial queries (greetings, yes/no) that don't need tool access; answered immediately with the direct prompt
+- **`tool`** — coding tasks that require workspace tools; triggers the full plan + execute cycle
+
+The classifier uses keyword scoring against tool names (e.g., "read", "write", "compile") and always falls back to `"direct"` when no keywords match.
+
+## Ollama Client — Tool Support Detection
+
+The `ollama_client.py` module (`OllamaClient`) auto-detects whether the loaded model supports function/tool calling. On first `chat()` call, it queries `GET /api/tags` on the Ollama host and inspects the `capabilities` field of the model listing. If the model lacks `"tools"` in its capabilities, the `tools` field is omitted from the chat payload, preventing API errors.
+
+Detection is cached (`supports_tools_cache`) for the lifetime of the client. If the capability check fails (network error, unexpected response format), tools are assumed supported as a safe default.
 
 ## Extending: Adding New Tools
 
@@ -336,7 +449,7 @@ Tool calls to `call.sh` require a JSON body with `name` (tool name) and `argumen
 
 ## Configuration
 
-`mcp_poc/config.yaml`:
+`mcp_poc/config.yaml` — all fields with defaults:
 
 ```yaml
 scout:
@@ -357,4 +470,36 @@ workspace:
 agent:
   max_turns: 20
   temperature: 0.1
+  max_context_tokens: 2000
+
+  knowledge:
+    ingest_on_startup: false
+    require_user_approval: true
+    blacklist:
+      - simplesieve
+      - primesieve
+      - prime sieve
+      - sieve of eratosthenes
+    blacklist_regex: []
+    max_chunks_per_session: 50
+
+  context:
+    session_tokens: 500
+    conversation_tokens: 500
+    knowledge_tokens: 500
+    task_tokens: 500
 ```
+
+### Config Fields
+
+| Path | Default | Description |
+|------|---------|-------------|
+| `ollama.model` | `qwen2.5-coder:7b` | Model name for chat + embeddings |
+| `agent.max_turns` | `20` | Max tool-call iterations per task |
+| `agent.max_context_tokens` | `2000` | Hard cap on injected context tokens |
+| `agent.knowledge.ingest_on_startup` | `false` | Auto-ingest past session logs |
+| `agent.knowledge.require_user_approval` | `true` | Gate knowledge storage behind user approval |
+| `agent.knowledge.blacklist` | `[...]` | Substring contamination patterns |
+| `agent.knowledge.blacklist_regex` | `[]` | Regex contamination patterns |
+| `agent.knowledge.max_chunks_per_session` | `50` | Max chunks per ingestion batch |
+| `agent.context.*_tokens` | `500` | Per-section token budgets (reserved) |

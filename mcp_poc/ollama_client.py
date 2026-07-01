@@ -15,9 +15,26 @@ class OllamaClient:
         self.model = config.ollama.model
         self.client = httpx.AsyncClient(timeout=config.ollama.timeout)
         self.tunnel_manager = tunnel_manager
+        self.supports_tools = True
         if tunnel_manager is None:
             # Fallback to script-based check for backward compatibility
             self.tunnel_check_script = "/home/scout/projects/sandbox/scout/cgi-bin/workspace/tunnel_check.py"
+
+        # Detect tool support from Ollama model capabilities
+        self.supports_tools_cache = None
+
+    async def _check_tool_support(self) -> bool:
+        try:
+            resp = await self.client.get(f"{self.base_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+            for m in data.get("models", []):
+                if m["name"] == self.model:
+                    caps = m.get("capabilities", [])
+                    return "tools" in caps
+            return True
+        except Exception:
+            return True
 
     def _run_tunnel_check(self, action: str) -> Tuple[bool, str]:
         """Run tunnel check script and return result"""
@@ -86,6 +103,10 @@ class OllamaClient:
         if not self._ensure_tunnel():
             raise ConnectionError("Ollama tunnel unavailable")
         
+        if self.supports_tools_cache is None:
+            self.supports_tools_cache = await self._check_tool_support()
+            logger.info("Model '%s' tool support: %s", self.model, self.supports_tools_cache)
+
         payload = {
             "model": self.model,
             "messages": messages,
@@ -96,7 +117,7 @@ class OllamaClient:
             }
         }
 
-        if tools:
+        if tools and self.supports_tools_cache:
             payload["tools"] = tools
 
         if format:
