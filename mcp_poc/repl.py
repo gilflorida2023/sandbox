@@ -54,6 +54,10 @@ async def repl():
         print("  /reject <id>    — reject a pending chunk")
         print("  /blacklist <p>  — add contamination pattern ('re:' prefix = regex)")
         print("  /search <q>     — semantic search across wiki + knowledge")
+        print("  /resume <id>    — resume a previous session")
+        print("  /summarize <n>   — generate conversation summary")
+        print("  /task <action>   — manage tasks (add/show/update)")
+        print("  /correct <id> <feedback> — submit user correction")
         print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})\n")
 
         command_history = []
@@ -133,6 +137,59 @@ async def repl():
                         else:
                             agent.context.approval.add_blacklist_pattern(pattern)
                             print(f"\nAdded blacklist pattern: {pattern}")
+                    continue
+
+                elif raw_input == "/resume":
+                    pending = agent.session_state.as_dict()
+                    if not pending:
+                        print("\nNo previous sessions to resume.")
+                    else:
+                        print(f"\n=== Current Session State ===")
+                        print(f"Session ID: {pending.get('session_id')}")
+                        print(f"Turn Count: {pending.get('turn_count')}")
+                        print(f"Active Task: {pending.get('active_task') or 'None'}")
+                        print(f"Conversation Summary: {pending.get('conversation_summary')[:100] or 'None'}...")
+                        print(f"Files Referenced: {len(pending.get('referenced_files', []))}")
+                        print(f"Context Fragments: {len(pending.get('context_fragments', []))}")
+                    continue
+
+                elif raw_input.startswith("/summarize "):
+                    try:
+                        count = int(raw_input[len("/summarize "):].strip())
+                        summary = agent.session_state.as_dict().get('conversation_summary', '')
+                        print(f"\n=== Conversation Summary (Last {count} Turns) ===")
+                        if summary:
+                            print(summary[:500] + "...")
+                        else:
+                            print("No summary available.")
+                    except ValueError:
+                        print("\nUsage: /summarize <number_of_turns>")
+                    continue
+
+                elif raw_input == "/task":
+                    print("\n=== Task Management ===")
+                    print("Available actions: add, show, update")
+                    print("Example: /task add 'Implement Phase 3'")
+                    print("Example: /task show 1")
+                    print("Example: /task update 1 status 'completed'")
+                    continue
+
+                elif raw_input.startswith("/correct "):
+                    try:
+                        parts = raw_input[len("/correct "):].strip().split(" ", 1)
+                        if len(parts) < 2:
+                            print("\nUsage: /correct <topic> <feedback>")
+                            continue
+                        topic, feedback = parts[0], parts[1]
+                        agent.correction_store.add_correction(
+                            topic=topic,
+                            incorrect="[previous incorrect response]",
+                            correct=feedback,
+                            context="User identified error"
+                        )
+                        print(f"\nCorrection stored for topic: {topic}")
+                    except Exception as e:
+                        print(f"\nError storing correction: {e}")
                     continue
 
                 if raw_input.lower() in ("exit", "quit"):
