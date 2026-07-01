@@ -23,6 +23,45 @@ CHUNKS_FILE = "chunks.json"  # legacy file for migration
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+# Default keywords that indicate contaminated/noisy knowledge — skip on ingestion
+# Can be overridden via WindowedContextDB(blacklist=...) or config.yaml
+DEFAULT_BLACKLIST = {
+    "simplesieve", "primesieve", "prime sieve", "sieve of eratosthenes",
+}
+
+# Compiled cache for regex blacklist patterns
+_regex_blacklist_cache: list = []
+
+def _compile_regex_blacklist(patterns: list) -> list:
+    """Compile list of regex pattern strings into re.Pattern objects."""
+    compiled = []
+    for p in patterns:
+        try:
+            compiled.append(re.compile(p, re.IGNORECASE))
+        except re.error as e:
+            logger.warning("Invalid regex blacklist pattern %r: %s", p, e)
+    return compiled
+
+def _is_contaminated(content: str, blacklist: set = None,
+                      blacklist_regex: list = None) -> bool:
+    bl = blacklist or DEFAULT_BLACKLIST
+    cl = content.lower()
+    if any(kw in cl for kw in bl):
+        return True
+    if blacklist_regex:
+        for pattern in blacklist_regex:
+            if pattern.search(cl):
+                return True
+    return False
+
+def _estimate_tokens(text: str) -> int:
+    return len(text) // 4
+
+def _truncate_at_tokens(text: str, max_tokens: int) -> str:
+    if _estimate_tokens(text) <= max_tokens:
+        return text
+    return text[:max_tokens * 4]
+
 
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
@@ -128,11 +167,14 @@ class WindowedContextDB:
     """
 
     def __init__(self, storage_path: str, max_window: int = 30,
-                 max_total: int = 500):
+                 max_total: int = 500, blacklist: set = None,
+                 blacklist_regex: list = None):
         self.storage = Path(storage_path)
         self.storage.mkdir(parents=True, exist_ok=True)
         self.max_window = max_window
         self.max_total = max_total
+        self.blacklist = blacklist if blacklist is not None else set(DEFAULT_BLACKLIST)
+        self.blacklist_regex = _compile_regex_blacklist(blacklist_regex or [])
 
         db_path = self.storage / DB_FILENAME
         self._db = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -195,10 +237,29 @@ class WindowedContextDB:
             access_count=row["access_count"],
         )
 
+    # ── Blacklist management ────────────────────────────────────────────
+
+    def add_blacklist_pattern(self, pattern: str):
+        """Add a substring blacklist pattern at runtime."""
+        self.blacklist.add(pattern.lower())
+        logger.info("Added blacklist pattern: %s", pattern)
+
+    def add_blacklist_regex(self, pattern: str):
+        """Add a regex blacklist pattern at runtime."""
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+            self.blacklist_regex.append(compiled)
+            logger.info("Added regex blacklist pattern: %s", pattern)
+        except re.error as e:
+            logger.warning("Invalid regex pattern %r: %s", pattern, e)
+
     # ── Public API ──────────────────────────────────────────────────────
 
     def add(self, content: str, source: str = "manual",
             tags: Optional[List[str]] = None) -> str:
+        if _is_contaminated(content, self.blacklist, self.blacklist_regex):
+            logger.debug("Skipping contaminated chunk: %.80s", content)
+            return ""
         chunk = KnowledgeChunk.new(content, source=source, tags=tags)
         existing = self._db.execute(
             "SELECT * FROM chunks WHERE chunk_id = ?", (chunk.chunk_id,)
@@ -373,12 +434,13 @@ class WindowedContextDB:
 
     # ── Session log ingestion ───────────────────────────────────────────
 
-    def ingest_session_log(self, log_path: str) -> int:
+    def ingest_session_log(self, log_path: str, store_callback=None) -> int:
         path = Path(log_path)
         if not path.exists():
             logger.warning("Session log not found: %s", log_path)
             return 0
 
+        store = store_callback or self.add
         text = path.read_text()
         added = 0
         source = f"session:{path.stem}"
@@ -392,8 +454,8 @@ class WindowedContextDB:
                     continue
                 decision = re.sub(r"^\d+\.\s*", "", line).strip()
                 if decision:
-                    self.add(f"Decision: {decision}",
-                             source=source, tags=["decision"])
+                    store(f"Decision: {decision}",
+                          source=source, tags=["decision"])
                     added += 1
 
         for match in re.finditer(
@@ -405,8 +467,8 @@ class WindowedContextDB:
                     continue
                 rb = re.sub(r"^-\s*", "", line).strip()
                 if rb:
-                    self.add(f"Roadblock: {rb}",
-                             source=source, tags=["roadblock"])
+                    store(f"Roadblock: {rb}",
+                          source=source, tags=["roadblock"])
                     added += 1
 
         for match in re.finditer(
@@ -418,8 +480,8 @@ class WindowedContextDB:
                     continue
                 ai = re.sub(r"^-\s*\[.?\]\s*", "", line).strip()
                 if ai:
-                    self.add(f"Action: {ai}",
-                             source=source, tags=["action"])
+                    store(f"Action: {ai}",
+                          source=source, tags=["action"])
                     added += 1
 
         for match in re.finditer(
@@ -432,8 +494,8 @@ class WindowedContextDB:
                 idea = re.sub(r"^-\s*\*{0,2}", "", line).strip()
                 idea = re.sub(r"\*{0,2}:\s*", ": ", idea)
                 if idea:
-                    self.add(f"Idea: {idea}",
-                             source=source, tags=["idea"])
+                    store(f"Idea: {idea}",
+                          source=source, tags=["idea"])
                     added += 1
 
         for match in re.finditer(
@@ -446,8 +508,8 @@ class WindowedContextDB:
                 concept = re.sub(r"^-\s*\*{0,2}", "", line).strip()
                 concept = re.sub(r"\*{0,2}:\s*", ": ", concept)
                 if concept:
-                    self.add(f"Concept: {concept}",
-                             source=source, tags=["concept"])
+                    store(f"Concept: {concept}",
+                          source=source, tags=["concept"])
                     added += 1
 
         for match in re.finditer(
@@ -460,8 +522,8 @@ class WindowedContextDB:
                 term = re.sub(r"^-\s*\*{0,2}", "", line).strip()
                 term = re.sub(r"\*{0,2}:\s*", ": ", term)
                 if term:
-                    self.add(f"Term: {term}",
-                             source=source, tags=["term", "glossary"])
+                    store(f"Term: {term}",
+                          source=source, tags=["term", "glossary"])
                     added += 1
 
         if added:

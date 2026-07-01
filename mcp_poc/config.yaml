@@ -16,6 +16,24 @@ workspace:
 agent:
   max_turns: 20
   temperature: 0.1
+  max_context_tokens: 2000
+
+  knowledge:
+    ingest_on_startup: false
+    require_user_approval: true
+    blacklist:
+      - simplesieve
+      - primesieve
+      - prime sieve
+      - sieve of eratosthenes
+    blacklist_regex: []
+    max_chunks_per_session: 50
+
+  context:
+    session_tokens: 500
+    conversation_tokens: 500
+    knowledge_tokens: 500
+    task_tokens: 500
 
 context:
   path: "/home/scout/projects/sandbox/workspace/.context"

@@ -41,7 +41,11 @@ async def repl():
         agent = CodingAgent(tunnel_manager=tunnel_mgr)
         print(f"Model: {agent.ollama.model}")
         print("Type 'exit' or Ctrl-D to quit.")
-        print("Type /plan or /build to switch modes.")
+        print("  /plan | /build  — switch modes")
+        print("  /pending        — list knowledge chunks awaiting approval")
+        print("  /approve <id>   — approve a pending chunk")
+        print("  /reject <id>    — reject a pending chunk")
+        print("  /blacklist <p>  — add contamination pattern ('re:' prefix = regex)")
         print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})\n")
 
         command_history = []
@@ -60,6 +64,52 @@ async def repl():
                     result = await agent.switch_mode(BUILD_MODE)
                     print(f"\n{result}")
                     print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})")
+                    continue
+                elif raw_input == "/pending":
+                    pending = agent.context.approval.get_pending_summary()
+                    if not pending:
+                        print("\nNo pending knowledge chunks awaiting review.")
+                    else:
+                        print(f"\n=== Pending Knowledge Chunks ({len(pending)}) ===")
+                        for p in pending:
+                            print(f"  ID: {p['id']}")
+                            print(f"  Source: {p['source']}")
+                            print(f"  Tags: {p['tags']}")
+                            print(f"  Preview: {p['content_preview'][:120]}...")
+                            print()
+                    continue
+                elif raw_input.startswith("/approve "):
+                    chunk_id = raw_input[len("/approve "):].strip()
+                    if not chunk_id:
+                        print("Usage: /approve <chunk_id>")
+                    elif agent.context.approval.approve(chunk_id):
+                        print(f"\nApproved chunk {chunk_id}")
+                    else:
+                        print(f"\nChunk {chunk_id} not found in pending queue")
+                    continue
+                elif raw_input.startswith("/reject "):
+                    chunk_id = raw_input[len("/reject "):].strip()
+                    if not chunk_id:
+                        print("Usage: /reject <chunk_id>")
+                    elif agent.context.approval.reject(chunk_id):
+                        print(f"\nRejected chunk {chunk_id}")
+                    else:
+                        print(f"\nChunk {chunk_id} not found in pending queue")
+                    continue
+                elif raw_input.startswith("/blacklist "):
+                    pattern = raw_input[len("/blacklist "):].strip()
+                    if not pattern:
+                        print("Usage: /blacklist <pattern>")
+                        print("  Add a substring pattern (e.g. 'sieve')")
+                        print("  Prefix with 're:' for regex (e.g. 're:sieve\\\\s+of')")
+                    else:
+                        if pattern.startswith("re:"):
+                            regex = pattern[3:]
+                            agent.context.approval.add_blacklist_regex(regex)
+                            print(f"\nAdded regex blacklist pattern: {regex}")
+                        else:
+                            agent.context.approval.add_blacklist_pattern(pattern)
+                            print(f"\nAdded blacklist pattern: {pattern}")
                     continue
 
                 if raw_input.lower() in ("exit", "quit"):

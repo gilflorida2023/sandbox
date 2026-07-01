@@ -21,9 +21,27 @@ class WorkspaceConfig:
     wiki_path: str = "/home/scout/projects/sandbox/workspace/.wiki"
 
 @dataclass
+class AgentKnowledgeConfig:
+    ingest_on_startup: bool = False
+    require_user_approval: bool = True
+    blacklist: list = field(default_factory=lambda: ["simplesieve", "primesieve", "prime sieve", "sieve of eratosthenes"])
+    blacklist_regex: list = field(default_factory=list)
+    max_chunks_per_session: int = 50
+
+@dataclass
+class AgentContextConfig:
+    session_tokens: int = 500
+    conversation_tokens: int = 500
+    knowledge_tokens: int = 500
+    task_tokens: int = 500
+
+@dataclass
 class AgentConfig:
     max_turns: int = 20
     temperature: float = 0.1
+    max_context_tokens: int = 2000
+    knowledge: AgentKnowledgeConfig = field(default_factory=AgentKnowledgeConfig)
+    context: AgentContextConfig = field(default_factory=AgentContextConfig)
 
 @dataclass
 class ContextConfig:
@@ -50,7 +68,14 @@ class Config:
         if "workspace" in data:
             config.workspace = WorkspaceConfig(**data["workspace"])
         if "agent" in data:
-            config.agent = AgentConfig(**data["agent"])
+            agent_data = data["agent"]
+            knowledge_data = agent_data.pop("knowledge", {})
+            context_data = agent_data.pop("context", {})
+            config.agent = AgentConfig(**agent_data)
+            if knowledge_data:
+                config.agent.knowledge = AgentKnowledgeConfig(**knowledge_data)
+            if context_data:
+                config.agent.context = AgentContextConfig(**context_data)
         if "context" in data:
             config.context = ContextConfig(**data["context"])
         return config

@@ -70,7 +70,7 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
     except (json.JSONDecodeError, TypeError):
         pass
     
-    # Extract from markdown code blocks
+    # Extract from markdown code blocks using balanced-brace matching (handles multiline JSON)
     for delim in ['```json', '```']:
         start = content.find(delim)
         if start == -1:
@@ -79,20 +79,48 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
         end = content.find('```', start)
         if end == -1:
             end = len(content)
-        block = content[start:end].strip()
-        for line in block.split('\n'):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                if isinstance(data, dict) and "name" in data:
-                    args = data.get("arguments", {})
-                    if isinstance(args, str):
-                        args = json.loads(args)
-                    calls.append({"name": data["name"], "arguments": args})
-            except (json.JSONDecodeError, TypeError):
-                continue
+        block = content[start:end]
+        idx = 0
+        while idx < len(block):
+            brace = block.find('{', idx)
+            if brace == -1:
+                break
+            depth = 0
+            in_str = False
+            esc = False
+            for end_idx in range(brace, len(block)):
+                ch = block[end_idx]
+                if esc:
+                    esc = False
+                    continue
+                if ch == '\\' and in_str:
+                    esc = True
+                    continue
+                if ch == '"' and not esc:
+                    in_str = not in_str
+                    continue
+                if not in_str:
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                json_str = block[brace:end_idx + 1]
+                                # Model often emits raw newlines where \n escape is needed
+                                json_str = json_str.replace('\r\n', '\\n').replace('\r', '\\n').replace('\n', '\\n')
+                                data = json.loads(json_str)
+                                if isinstance(data, dict) and "name" in data:
+                                    args = data.get("arguments", {})
+                                    if isinstance(args, str):
+                                        args = json.loads(args)
+                                    calls.append({"name": data["name"], "arguments": args})
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                            idx = end_idx + 1
+                            break
+            else:
+                idx = brace + 1
         if calls:
             return calls
 
@@ -142,13 +170,16 @@ class CodingAgent:
         self.mcp = MCPClient()
         self.ollama = OllamaClient(tunnel_manager=tunnel_manager)
         self.wiki = ToolWiki()
-        self.context = ContextManager(self.wiki)
+        self.context = ContextManager(
+            self.wiki,
+            blacklist=set(config.agent.knowledge.blacklist) if config.agent.knowledge.blacklist else None,
+            blacklist_regex=config.agent.knowledge.blacklist_regex or None,
+        )
         self.system_prompt = (Path(__file__).parent / "prompts/system_prompt.txt").read_text()
         self.direct_prompt = (Path(__file__).parent / "prompts/direct_prompt.txt").read_text()
         self.plan_prompt = (Path(__file__).parent / "prompts/plan_prompt.txt").read_text()
         self.router = QueryRouter()
         self.learned_tools = set()
-        self.wiki_injected = set()
         self.session_id = session_id
         self.session_logger = SessionLogger(
             workspace_path=config.workspace.path,
@@ -165,12 +196,10 @@ class CodingAgent:
         self.change_log = []
         self.current_user = "system"
 
-        # Ingest past session logs into knowledge base on startup
-        logs_dir = f"{config.workspace.path}/.session-log"
-        ingested = self.context.ingest_session_logs(logs_dir, max_logs=50)
-        if ingested:
-            logger.info("Ingested %d knowledge chunks from past session logs", ingested)
-            self.context.persist_knowledge()
+        # Knowledge ingestion on startup is disabled by default.
+        # Past session logs can contain task-specific noise (e.g. prime sieve code)
+        # that contaminates future sessions when injected as "Accumulated Knowledge".
+        # Enable via config.knowledge.ingest_on_startup if needed.
 
     def _build_tool_reference(self, tools: list) -> str:
         lines = ["# Tool Reference Guide", ""]
@@ -195,19 +224,6 @@ class CodingAgent:
             lines.append("")
         
         return "\n".join(lines)
-
-    def _get_tool_wiki_doc(self, tool_name: str) -> str | None:
-        doc = self.wiki.get_tool_doc(tool_name)
-        if doc:
-            return doc
-        # Try heuristic: strip prefix if needed
-        short_name = tool_name.split(".")[-1] if "." in tool_name else tool_name
-        for t in self.wiki.index.get("tools", []):
-            if t["name"] == tool_name or t["name"].endswith(f".{short_name}"):
-                wiki_file = Path(self.wiki.wiki_path) / t["wiki_file"]
-                if wiki_file.exists():
-                    return wiki_file.read_text()
-        return None
 
     def _is_dangerous_tool_call(self, func_name: str, func_args: dict) -> bool:
         dangerous_tools = {
@@ -611,11 +627,11 @@ class CodingAgent:
         if plan:
             messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
 
-        wiki_context = self.context.get_relevant_context(task)
+        wiki_context = self.context.get_relevant_context(task, max_tokens=config.agent.max_context_tokens)
         if wiki_context:
             messages.insert(1, {"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
 
-        kb_window = self.context.get_knowledge_window()
+        kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
 
@@ -670,6 +686,8 @@ class CodingAgent:
                         },
                         "id": f"text_tc_{i}"
                     } for i, p in enumerate(parsed_list)]
+                else:
+                    logger.warning("No text-parsed tool calls in %d chars (run)", len(content))
 
             if content:
                 msg = {"role": "assistant", "content": content}
@@ -693,12 +711,9 @@ class CodingAgent:
                 if isinstance(func_args, str):
                     func_args = json.loads(func_args)
 
-                if func_name not in self.wiki_injected:
-                    wiki_doc = self._get_tool_wiki_doc(func_name)
-                    if wiki_doc:
-                        wiki_msg = {"role": "system", "content": f"## {func_name} Documentation\n\n{wiki_doc}"}
-                        messages.insert(-1, wiki_msg)
-                    self.wiki_injected.add(func_name)
+                # Per-tool wiki auto-injection removed: it burned context tokens
+                # on docs the model didn't ask for. The model can call wiki.lookup
+                # on demand if it needs documentation for a tool.
 
                 logger.info(f"Executing: {func_name}({func_args})")
 
@@ -780,8 +795,8 @@ class CodingAgent:
             {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
         ]
 
-        # Inject accumulated knowledge window
-        kb_window = self.context.get_knowledge_window()
+        # Inject accumulated knowledge window (token-bounded)
+        kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.append(
                 {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"}
@@ -840,11 +855,11 @@ class CodingAgent:
         if plan:
             messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
 
-        wiki_context = self.context.get_relevant_context(user_input)
+        wiki_context = self.context.get_relevant_context(user_input, max_tokens=config.agent.max_context_tokens)
         if wiki_context:
             messages.append({"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
 
-        kb_window = self.context.get_knowledge_window()
+        kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.append({"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
 
@@ -891,6 +906,8 @@ class CodingAgent:
                         },
                         "id": f"text_tc_{i}",
                     } for i, p in enumerate(parsed_list)]
+                else:
+                    logger.warning("No text-parsed tool calls in %d chars (chat)", len(content))
 
             if content:
                 msg = {"role": "assistant", "content": content}
@@ -914,17 +931,17 @@ class CodingAgent:
                 if isinstance(func_args, str):
                     func_args = json.loads(func_args)
 
-                if func_name not in self.wiki_injected:
-                    wiki_doc = self._get_tool_wiki_doc(func_name)
-                    if wiki_doc:
-                        logger.info("Injecting wiki docs for %s", func_name)
-                        wiki_msg = {"role": "system", "content": f"## {func_name} Documentation\n\n{wiki_doc}"}
-                        messages.insert(-1, wiki_msg)
-                    self.wiki_injected.add(func_name)
+                # Per-tool wiki auto-injection removed: the model can call
+                # wiki.lookup on demand if it needs documentation.
 
                 logger.info("Executing: %s(%s)", func_name, func_args)
                 try:
                     result = await self.execute_tool_with_protection(func_name, func_args)
+                    # Auto-switch to BUILD mode if blocked by mode restriction
+                    if result.get("mode_restriction"):
+                        logger.info("Auto-switching to BUILD mode for tool execution")
+                        self.current_mode = BUILD_MODE
+                        result = await self.execute_tool_with_protection(func_name, func_args)
                     result_str = json.dumps(result)
                     messages.append({
                         "role": "user",
@@ -1019,14 +1036,17 @@ async def main():
             if files:
                 print(f"  Files touched: {len(files)}")
 
-        # Ingest session log into windowed knowledge
+        # Ingest session log via approval gate
         out_file = log_result.get("output_file")
         if out_file:
-            ingested = agent.context.ingest_session_log(out_file)
-            if ingested:
-                print(f"  Knowledge chunks accumulated: {ingested}")
+            proposed = agent.context.ingest_session_log(out_file)
+            pending = agent.context.approval.pending_count()
+            approved = len(agent.context.approval.approved)
+            print(f"  Knowledge chunks proposed: {proposed} (pending: {pending}, approved: {approved})")
+            if config.agent.knowledge.require_user_approval and pending > 0:
+                print(f"  Use /pending in the REPL to review, /approve <id> or /reject <id> to decide")
         agent.context.persist_knowledge()
-        print(f"  Total knowledge chunks: {agent.context.knowledge.count()}")
+        print(f"  Total knowledge chunks stored: {agent.context.knowledge.count()}")
     finally:
         await agent.close()
 
