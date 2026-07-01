@@ -5,6 +5,9 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional
+import os
+import hashlib
+import time
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -18,8 +21,11 @@ from session_log import SessionLogger
 from router import QueryRouter
 from tunnel_manager import TunnelManager
 
+# Dual-mode system constants
+PLAN_MODE = "PLAN"
+BUILD_MODE = "BUILD"
+
 # Setup logging to workspace/.session-log with relative path from workspace
-import os
 log_dir = Path(config.workspace.path) / ".session-log"
 log_dir.mkdir(parents=True, exist_ok=True)
 root = logging.getLogger()
@@ -150,6 +156,14 @@ class CodingAgent:
             ollama_port=config.ollama.port,
             ollama_model=config.ollama.model,
         )
+
+        # Initialize dual-mode system
+        self.current_mode = PLAN_MODE
+        self.mode_switch_count = 0
+        self.protection_cache = {}
+        self.pending_changes = {}
+        self.change_log = []
+        self.current_user = "system"
 
         # Ingest past session logs into knowledge base on startup
         logs_dir = f"{config.workspace.path}/.session-log"
@@ -333,6 +347,11 @@ class CodingAgent:
         # Sandbox check
         if not str(full_path).startswith(str(workspace_root)):
             return {"success": False, "error": "Path outside workspace"}
+        
+        # Check for dual-mode protection if agent instance is available
+        # Note: This is a static method, so we can't access instance methods directly
+        # Protection should be applied in the chat method before calling _write_file_directly
+        
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(content)
@@ -342,6 +361,186 @@ class CodingAgent:
         except Exception as e:
             logger.error("Direct write failed: %s", e)
             return {"success": False, "error": str(e)}
+
+    async def switch_mode(self, new_mode: str) -> str:
+        """Switch between PLAN_MODE and BUILD_MODE with confirmation.
+        
+        Args:
+            new_mode: Either "PLAN" or "BUILD"
+            
+        Returns:
+            Status message of the mode switch
+        """
+        valid_modes = ["PLAN", "BUILD"]
+        if new_mode.upper() not in valid_modes:
+            return f"Invalid mode. Must be one of: {', '.join(valid_modes)}"
+        
+        old_mode = getattr(self, 'current_mode', PLAN_MODE)
+        if old_mode == new_mode.upper():
+            return f"Already in {new_mode.upper()} mode"
+        
+        confirmation = input(f"\nSwitch from {old_mode} mode to {new_mode.upper()} mode? This requires explicit confirmation for all subsequent operations. (y/N): ")
+        if confirmation.lower() != 'y':
+            return "Mode switch cancelled by user"
+        
+        # Log mode change
+        logger.info(f"Mode switch: {old_mode} → {new_mode.upper()}")
+        
+        # Update mode state
+        self.current_mode = new_mode.upper()
+        self.mode_switch_count += 1
+        
+        # Clear sensitive cache on mode change
+        self.protection_cache.clear()
+        self.pending_changes.clear()
+        
+        return f"Mode switched to {new_mode.upper()} successfully"
+
+    async def _requires_authorization(self, func_name: str, func_args: dict) -> bool:
+        """Check if a tool call requires explicit authorization based on current mode."""
+        if self.current_mode == PLAN_MODE:
+            if func_name in ['workspace.write', 'workspace.delete', 'workspace.compile', 'workspace.run']:
+                return True
+        return False
+
+    async def _confirm_change(self, func_name: str, func_args: dict) -> bool:
+        """Get explicit user confirmation for a change in BUILD mode."""
+        if self.current_mode != BUILD_MODE:
+            return True
+            
+        if self._is_dangerous_tool_call(func_name, func_args):
+            path = func_args.get('path', '')
+            content_preview = func_args.get('content', '')[:200] if func_args.get('content') else ''
+            
+            print(f"\n{'='*60}")
+            print(f"BUILD MODE CONFIRMATION REQUIRED")
+            print(f"{'='*60}")
+            print(f"Tool: {func_name}")
+            print(f"Path: {path}")
+            if content_preview:
+                print(f"Content preview:\n{content_preview}")
+            print(f"\nCurrent mode: BUILD (read/write/execute permissions)")
+            print(f"\nThis will:")
+            if func_name == 'workspace.write':
+                print(f"  - Create or overwrite file: {path}")
+            elif func_name == 'workspace.delete':
+                print(f"  - Delete file/directory: {path}")
+            elif func_name == 'workspace.compile':
+                print(f"  - Compile source: {path}")
+            elif func_name == 'workspace.run':
+                print(f"  - Execute: {path}")
+            print(f"\nEnter 'y' to approve, or any other key to reject:")
+            
+            try:
+                if not sys.stdin.isatty():
+                    return False
+                confirmation = input("CONFIRM [y/N]: ").strip().lower()
+                return confirmation == 'y'
+            except:
+                return False
+        
+        return True
+
+    async def execute_tool_with_protection(self, func_name: str, func_args: dict):
+        """Execute a tool call with dual-mode protection."""
+        # Check mode restrictions
+        if await self._requires_authorization(func_name, func_args):
+            if self.current_mode == PLAN_MODE:
+                return {
+                    "success": False,
+                    "error": f"Operation '{func_name}' requires BUILD mode (currently in PLAN mode)",
+                    "mode_restriction": True,
+                    "suggestion": "Press Tab in the REPL to switch to BUILD mode, or perform this analysis in PLAN mode only."
+                }
+        
+        # Get user confirmation for dangerous operations in BUILD mode
+        if self.current_mode == BUILD_MODE and await self._confirm_change(func_name, func_args):
+            try:
+                # Log the attempt
+                logger.info(f"Change approved: {func_name}({func_args.get('path', '')})")
+                
+                # Execute the tool
+                if func_name == "workspace.write":
+                    result = self._write_file_directly(func_args["path"], func_args["content"])
+                    if result.get("success"):
+                        filepath = Path(config.workspace.path) / func_args["path"]
+                        self._fix_file_escaping(filepath)
+                else:
+                    result = await self.mcp.call_tool(func_name, func_args)
+                
+                # Record successful change
+                if result.get("success"):
+                    self._record_change(func_name, func_args, "approved")
+                
+                return result
+            except Exception as e:
+                logger.error(f"Tool {func_name} failed: {e}")
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        elif self.current_mode == BUILD_MODE:
+            logger.info(f"Change rejected: {func_name}")
+            return {
+                "success": False,
+                "error": f"User rejected change for '{func_name}'",
+                "user_rejected": True
+            }
+        
+        else:
+            # In PLAN mode but not requiring authorization
+            return await self.mcp.call_tool(func_name, func_args)
+
+    def _record_change(self, func_name: str, func_args: dict, status: str):
+        """Record a change for audit purposes."""
+        if not hasattr(self, 'change_log'):
+            self.change_log = []
+        
+        change_record = {
+            "timestamp": time.time(),
+            "mode": self.current_mode,
+            "func_name": func_name,
+            "path": func_args.get('path', ''),
+            "status": status,
+            "user": "system",
+        }
+        
+        if func_name == 'workspace.write':
+            change_record["content_hash"] = hashlib.sha256(
+                func_args.get('content', '').encode()
+            ).hexdigest()[:16]
+        
+        self.change_log.append(change_record)
+        
+        # Persist change log periodically
+        if len(self.change_log) % 10 == 0:
+            self.persist_change_log()
+
+    def persist_change_log(self):
+        """Persist the change log to the workspace for audit purposes."""
+        if not hasattr(self, 'change_log') or not self.change_log:
+            return
+        
+        import json
+        log_path = Path(config.workspace.path) / "dual-mode-change-log.json"
+        
+        try:
+            existing_data = []
+            if log_path.exists():
+                existing_data = json.loads(log_path.read_text())
+            
+            # Append new changes
+            existing_data.extend(self.change_log)
+            
+            # Keep only last 1000 entries to prevent log bloat
+            if len(existing_data) > 1000:
+                existing_data = existing_data[-1000:]
+            
+            log_path.write_text(json.dumps(existing_data, indent=2))
+            logger.info(f"Change log persisted to {log_path} ({len(self.change_log)} entries)")
+        except Exception as e:
+            logger.error(f"Failed to persist change log: {e}")
 
     def _format_output(self, plan: str, tool_log: list, final_content: str) -> str:
         parts = [f"── Phase 1: Plan ──────────────────────────────", plan, ""]
@@ -717,13 +916,7 @@ class CodingAgent:
 
                 logger.info("Executing: %s(%s)", func_name, func_args)
                 try:
-                    if func_name == "workspace.write":
-                        result = self._write_file_directly(func_args["path"], func_args["content"])
-                        if result.get("success"):
-                            filepath = Path(config.workspace.path) / func_args["path"]
-                            self._fix_file_escaping(filepath)
-                    else:
-                        result = await self.mcp.call_tool(func_name, func_args)
+                    result = await self.execute_tool_with_protection(func_name, func_args)
                     result_str = json.dumps(result)
                     messages.append({
                         "role": "user",
@@ -832,3 +1025,15 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# Export key symbols for testing
+__all__ = [
+    'CodingAgent',
+    'PLAN_MODE',
+    'BUILD_MODE',
+    'switch_mode',
+    'execute_tool_with_protection',
+    '_requires_authorization',
+    '_confirm_change',
+    '_record_change',
+]
