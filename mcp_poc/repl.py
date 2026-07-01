@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Interactive REPL for the coding agent — with automatic SSH tunnel management."""
+import os
+import sys
+from pathlib import Path
+
+# Auto-detect and re-execute with venv Python
+_venv_python = Path(__file__).parent / "venv" / "bin" / "python"
+if sys.executable != str(_venv_python) and _venv_python.exists():
+    os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
+
 import asyncio
 import logging
-import sys
 import signal
 import readline
-from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))

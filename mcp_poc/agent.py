@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-import asyncio
+import os
 import sys
+from pathlib import Path
+
+# Auto-detect and re-execute with venv Python
+_venv_python = Path(__file__).parent / "venv" / "bin" / "python"
+if sys.executable != str(_venv_python) and _venv_python.exists():
+    os.execv(str(_venv_python), [str(_venv_python)] + sys.argv)
+
+import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Optional
-import os
 import hashlib
 import time
 
