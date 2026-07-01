@@ -12,11 +12,12 @@ def _estimate_tokens(text: str) -> int:
 
 
 class ContextManager:
-    """Manages conversation history AND windowed knowledge accumulation.
+    """Manages conversation history, windowed knowledge, and semantic search.
 
     Two-layer design:
       Layer 1 — Conversation history (sliding window of raw messages)
       Layer 2 — Windowed knowledge chunks (deduped, weighted, persistent)
+      Layer 3 — Semantic search (embedding + vector store for fuzzy matching)
 
     The knowledge layer acts as a "prime sieve": only unique, relevant
     knowledge survives across sessions.
@@ -25,10 +26,12 @@ class ContextManager:
     def __init__(self, wiki: ToolWiki, knowledge_path: str = None,
                  max_kb_window: int = 30, max_kb_total: int = 500,
                  blacklist: Set[str] = None,
-                 blacklist_regex: List[str] = None):
+                 blacklist_regex: List[str] = None,
+                 knowledge_indexer: Any = None):
         self.wiki = wiki
         self.history = []
         self.max_history = 20
+        self.knowledge_indexer = knowledge_indexer
 
         # Knowledge accumulation layer
         from config import config
@@ -98,7 +101,7 @@ class ContextManager:
                             logger.warning("Token budget exhausted after wiki guides")
                             break
 
-        # 3 — Knowledge chunks (windowed)
+        # 3 — Knowledge chunks (windowed, keyword match)
         if budget > 0:
             chunks = self.knowledge.query(query, max_results=5)
             if chunks:
@@ -114,6 +117,19 @@ class ContextManager:
                                    _estimate_tokens(combined), budget)
                     combined = combined[:max(budget * 4, 0)]
                 parts.append(combined)
+
+        # 4 — Semantic search results (embedding-based)
+        if budget > 0 and self.knowledge_indexer is not None and self.knowledge_indexer._indexed:
+            semantic_results = self.knowledge_indexer.search(query, top_k=3, score_threshold=0.4)
+            if semantic_results:
+                semantic_block = self.knowledge_indexer.format_results(
+                    semantic_results, max_chars=budget * 4
+                )
+                if _estimate_tokens(semantic_block) > budget:
+                    logger.warning("Truncated semantic search from %d to %d tokens",
+                                   _estimate_tokens(semantic_block), budget)
+                    semantic_block = semantic_block[:max(budget * 4, 0)]
+                parts.append(semantic_block)
 
         if not parts:
             getting_started = self.wiki.get_guide("getting_started")
@@ -131,8 +147,14 @@ class ContextManager:
 
     def add_knowledge(self, content: str, source: str = "agent",
                       tags: List[str] = None) -> str:
-        """Add a knowledge chunk via the approval gate."""
-        return self.approval.propose_knowledge(content, source=source, tags=tags)
+        """Add a knowledge chunk via the approval gate.
+
+        Also indexes approved chunks in the vector store for semantic search.
+        """
+        chunk_id = self.approval.propose_knowledge(content, source=source, tags=tags)
+        if chunk_id and self.knowledge_indexer:
+            self.knowledge_indexer.add_knowledge_chunk(content, source=source, tags=tags)
+        return chunk_id
 
     def get_knowledge_window(self, max_size: int = None, max_tokens: int = 1000) -> str:
         """Return top-weighted knowledge as a formatted string."""

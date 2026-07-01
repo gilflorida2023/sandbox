@@ -44,6 +44,17 @@ class AgentConfig:
     context: AgentContextConfig = field(default_factory=AgentContextConfig)
 
 @dataclass
+class EmbeddingConfig:
+    model: str = "nomic-embed-text"
+    host: str = "localhost"
+    port: int = 11434
+
+@dataclass
+class VectorStoreConfig:
+    storage_path: str = ""
+    embedding_dim: int = 768
+
+@dataclass
 class ContextConfig:
     path: str = ""
 
@@ -54,6 +65,8 @@ class Config:
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -78,6 +91,10 @@ class Config:
                 config.agent.context = AgentContextConfig(**context_data)
         if "context" in data:
             config.context = ContextConfig(**data["context"])
+        if "embedding" in data:
+            config.embedding = EmbeddingConfig(**data["embedding"])
+        if "vector_store" in data:
+            config.vector_store = VectorStoreConfig(**data["vector_store"])
         return config
 
 config = Config.from_yaml("/home/scout/projects/sandbox/mcp_poc/config.yaml")

@@ -20,6 +20,9 @@ from context_manager import ContextManager
 from session_log import SessionLogger
 from router import QueryRouter
 from tunnel_manager import TunnelManager
+from embedding_service import EmbeddingService
+from vector_store import VectorStore
+from knowledge_indexer import KnowledgeIndexer
 
 # Dual-mode system constants
 PLAN_MODE = "PLAN"
@@ -170,10 +173,28 @@ class CodingAgent:
         self.mcp = MCPClient()
         self.ollama = OllamaClient(tunnel_manager=tunnel_manager)
         self.wiki = ToolWiki()
+
+        # Phase 2: Semantic search infrastructure
+        vs_path = config.vector_store.storage_path or f"{config.workspace.path}/.context/vectors"
+        self.embed_service = EmbeddingService(
+            host=config.embedding.host,
+            port=config.embedding.port,
+            model=config.embedding.model,
+        )
+        self.vector_store = VectorStore(vs_path, embedding_dim=config.vector_store.embedding_dim)
+        self.knowledge_indexer = KnowledgeIndexer(self.embed_service, self.vector_store, self.wiki)
+        # Index wiki docs on startup (async-safe, uses synchronous httpx)
+        try:
+            self.knowledge_indexer.index_wiki(self.wiki)
+            logger.info("Wiki indexed: %d chunks in Qdrant", self.knowledge_indexer.wiki_count)
+        except Exception as e:
+            logger.warning("Failed to index wiki: %s", e)
+
         self.context = ContextManager(
             self.wiki,
             blacklist=set(config.agent.knowledge.blacklist) if config.agent.knowledge.blacklist else None,
             blacklist_regex=config.agent.knowledge.blacklist_regex or None,
+            knowledge_indexer=self.knowledge_indexer,
         )
         self.system_prompt = (Path(__file__).parent / "prompts/system_prompt.txt").read_text()
         self.direct_prompt = (Path(__file__).parent / "prompts/direct_prompt.txt").read_text()
@@ -979,6 +1000,7 @@ class CodingAgent:
     async def close(self):
         await self.mcp.close()
         await self.ollama.close()
+        self.knowledge_indexer.close()
 
 
 async def main():

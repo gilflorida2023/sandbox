@@ -35,5 +35,14 @@ agent:
     knowledge_tokens: 500
     task_tokens: 500
 
+embedding:
+  model: "nomic-embed-text"
+  host: "localhost"
+  port: 11434
+
+vector_store:
+  storage_path: "/home/scout/projects/sandbox/workspace/.context/vectors"
+  embedding_dim: 768
+
 context:
   path: "/home/scout/projects/sandbox/workspace/.context"
