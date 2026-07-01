@@ -574,7 +574,11 @@ class CodingAgent:
         plan = self._strip_plan_json(plan_resp.get("message", {}).get("content", "") or "")
 
         # Phase 2: Execute
-        tools = await self.mcp.list_tools()
+        try:
+            tools = await self.mcp.list_tools()
+        except Exception as e:
+            logger.error("Failed to list MCP tools: %s", e)
+            return f"MCP tools server is not running on port 8080.\n\n{plan}"
         tool_schemas = []
         tool_defs = []
         ref_tools = []
@@ -827,7 +831,11 @@ class CodingAgent:
 
         # Phase 2: Execute
         if messages is None:
-            messages, tool_schemas = await self.build_preamble()
+            try:
+                messages, tool_schemas = await self.build_preamble()
+            except Exception as e:
+                logger.error("Failed to build tool preamble: %s", e)
+                return f"MCP tools server is not running (port 8080). Workspace tools unavailable.\n\n{plan}", []
 
         if plan:
             messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})

@@ -1,10 +1,13 @@
 import httpx
 import json
 import asyncio
+import logging
 import socket
 from typing import Dict, Any, List, Optional, Tuple
 from config import config
 from tunnel_manager import TunnelManager
+
+logger = logging.getLogger(__name__)
 
 class OllamaClient:
     def __init__(self, tunnel_manager: Optional[TunnelManager] = None):
@@ -46,6 +49,12 @@ class OllamaClient:
             print(f"Tunnel check error: {e}")
             return False
 
+    def _reestablish_tunnel(self) -> bool:
+        """Re-establish the SSH tunnel in a subprocess (not in our thread)."""
+        if self.tunnel_manager:
+            return self.tunnel_manager.reestablish()
+        return self._run_tunnel_check("establish")[0]
+
     async def _make_request_with_retry(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """Make HTTP request with retry logic and tunnel validation"""
         max_attempts = 3
@@ -60,11 +69,14 @@ class OllamaClient:
                 return response.json()
                 
             except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                logger.warning("Ollama connection failed (attempt %d/%d), re-establishing tunnel...", attempt + 1, max_attempts)
+                self._reestablish_tunnel()
                 if attempt == max_attempts - 1:
                     raise ConnectionError(f"Connection failed after {max_attempts} attempts: {e}")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                
+                await asyncio.sleep(2 ** attempt)
+
             except Exception as e:
+                logger.warning("Ollama request failed (attempt %d/%d): %s", attempt + 1, max_attempts, e)
                 if attempt == max_attempts - 1:
                     raise
                 await asyncio.sleep(2 ** attempt)

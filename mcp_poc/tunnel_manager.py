@@ -164,6 +164,13 @@ class TunnelManager:
         logger.error("Tunnel establishment timeout")
         return False
 
+    def reestablish(self) -> bool:
+        """Actively check and re-establish the tunnel immediately.
+        Runs tunnel_check.py as a subprocess — no thread sharing."""
+        if not self.check_tunnel():
+            return self.establish_tunnel()
+        return True
+
 
 def create_tunnel_manager(**kwargs) -> TunnelManager:
     """Factory function to create TunnelManager with defaults."""
