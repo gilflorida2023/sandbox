@@ -97,24 +97,24 @@ async def repl():
                     else:
                         print(f"\nChunk {chunk_id} not found in pending queue")
                     continue
-                    elif raw_input.startswith("/search "):
-                        query = raw_input[len("/search "):].strip()
-                        if not query:
-                            print("Usage: /search <query>")
+                elif raw_input.startswith("/search "):
+                    query = raw_input[len("/search "):].strip()
+                    if not query:
+                        print("Usage: /search <query>")
+                    else:
+                        results = agent.context.knowledge_indexer.search(query, top_k=5)
+                        if not results:
+                            print(f"\nNo results for: {query}")
                         else:
-                            results = agent.context.knowledge_indexer.search(query, top_k=5)
-                            if not results:
-                                print(f"\nNo results for: {query}")
-                            else:
-                                print(f"\n=== Semantic Search Results ({len(results)}) ===")
-                                for r in results:
-                                    print(f"  [{r.source}] score={r.score:.3f}")
-                                    print(f"  {r.content[:200]}...")
-                                    print()
-                        continue
-                    elif raw_input.startswith("/blacklist "):
-                        pattern = raw_input[len("/blacklist "):].strip()
-                        if not pattern:
+                            print(f"\n=== Semantic Search Results ({len(results)}) ===")
+                            for r in results:
+                                print(f"  [{r.source}] score={r.score:.3f}")
+                                print(f"  {r.content[:200]}...")
+                                print()
+                    continue
+                elif raw_input.startswith("/blacklist "):
+                    pattern = raw_input[len("/blacklist "):].strip()
+                    if not pattern:
                         print("Usage: /blacklist <pattern>")
                         print("  Add a substring pattern (e.g. 'sieve')")
                         print("  Prefix with 're:' for regex (e.g. 're:sieve\\\\s+of')")
