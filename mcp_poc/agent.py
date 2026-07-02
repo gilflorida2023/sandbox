@@ -808,13 +808,7 @@ class CodingAgent:
                 logger.info(f"Executing: {func_name}({func_args})")
 
                 try:
-                    if func_name == "workspace.write":
-                        result = self._write_file_directly(func_args["path"], func_args["content"])
-                        if result.get("success"):
-                            filepath = Path(config.workspace.path) / func_args["path"]
-                            self._fix_file_escaping(filepath)
-                    else:
-                        result = await self.mcp.call_tool(func_name, func_args)
+                    result = await self.execute_tool_with_protection(func_name, func_args)
                     result_str = json.dumps(result)
                     logger.info(f"Result: {result_str[:500]}")
                     messages.append({
@@ -1039,11 +1033,6 @@ class CodingAgent:
                 logger.info("Executing: %s(%s)", func_name, func_args)
                 try:
                     result = await self.execute_tool_with_protection(func_name, func_args)
-                    # Auto-switch to BUILD mode if blocked by mode restriction
-                    if result.get("mode_restriction"):
-                        logger.info("Auto-switching to BUILD mode for tool execution")
-                        self.current_mode = BUILD_MODE
-                        result = await self.execute_tool_with_protection(func_name, func_args)
                     result_str = json.dumps(result)
                     messages.append({
                         "role": "user",
