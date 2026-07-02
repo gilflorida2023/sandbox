@@ -39,6 +39,7 @@ from correction_store import CorrectionStore
 # Dual-mode system constants
 PLAN_MODE = "PLAN"
 BUILD_MODE = "BUILD"
+EXPLORE_MODE = "EXPLORE"
 
 # Setup logging to workspace/.session-log with relative path from workspace
 log_dir = Path(config.workspace.path) / ".session-log"
@@ -232,9 +233,25 @@ class CodingAgent:
         self.router = QueryRouter()
         self.learned_tools = set()
         self.session_id = session_id
+        self.session_logger = SessionLogger(
+            workspace_path=config.workspace.path,
+            ollama_host=config.ollama.host,
+            ollama_port=config.ollama.port,
+            ollama_model=config.ollama.model,
+        )
 
-        # Phase 4: Recursive exploration system
-        self.EXPLORE_MODE = "EXPLORE"
+        # Initialize dual-mode system
+        self.current_mode = PLAN_MODE
+        self.mode_switch_count = 0
+        self.protection_cache = {}
+        self.pending_changes = {}
+        self.change_log = []
+        self.current_user = "system"
+
+        # Knowledge ingestion on startup is disabled by default.
+        # Past session logs can contain task-specific noise (e.g. prime sieve code)
+        # that contaminates future sessions when injected as "Accumulated Knowledge".
+        # Enable via config.knowledge.ingest_on_startup if needed.
 
     async def explore(self, task: str, exploration_id: str = "") -> tuple[str, dict]:
         """Start a recursive exploration session.
@@ -261,25 +278,6 @@ class CodingAgent:
         )
 
         return await solver.explore(task)
-        self.session_logger = SessionLogger(
-            workspace_path=config.workspace.path,
-            ollama_host=config.ollama.host,
-            ollama_port=config.ollama.port,
-            ollama_model=config.ollama.model,
-        )
-
-        # Initialize dual-mode system
-        self.current_mode = PLAN_MODE
-        self.mode_switch_count = 0
-        self.protection_cache = {}
-        self.pending_changes = {}
-        self.change_log = []
-        self.current_user = "system"
-
-        # Knowledge ingestion on startup is disabled by default.
-        # Past session logs can contain task-specific noise (e.g. prime sieve code)
-        # that contaminates future sessions when injected as "Accumulated Knowledge".
-        # Enable via config.knowledge.ingest_on_startup if needed.
 
     def _build_tool_reference(self, tools: list) -> str:
         lines = ["# Tool Reference Guide", ""]
