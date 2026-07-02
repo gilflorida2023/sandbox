@@ -17,6 +17,8 @@ case "$TOOL_NAME" in
     workspace.run)      "$CGI_DIR/run.py" <<< "$ARGS" ;;
     workspace.search)   "$CGI_DIR/search.py" <<< "$ARGS" ;;
     wiki.lookup)        "$CGI_DIR/wiki_lookup.py" <<< "$ARGS" ;;
+    workspace.webfetch)  "$CGI_DIR/webfetch.py" <<< "$ARGS" ;;
+    workspace.websearch)  "$CGI_DIR/websearch.py" <<< "$ARGS" ;;
     *)
         echo '{"success":false,"error":"Unknown tool: '"$TOOL_NAME"'","retryable":false}'
         exit 1

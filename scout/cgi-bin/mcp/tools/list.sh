@@ -12,7 +12,9 @@ cat << 'TOOLS'
     {"name": "workspace.delete", "description": "Delete file or directory from workspace", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "recursive": {"type": "boolean", "default": false}}, "required": ["path"]}},
     {"name": "workspace.run", "description": "Run code: compiles C/Go/Rust automatically, executes Python/bash scripts and binaries", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}, "default": []}, "timeout": {"type": "integer", "default": 30}}, "required": ["path"]}},
     {"name": "workspace.search", "description": "Search code with grep", "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string", "default": "."}, "file_pattern": {"type": "string"}, "context_lines": {"type": "integer", "default": 2}}, "required": ["pattern"]}},
-    {"name": "wiki.lookup", "description": "Look up tool or guide documentation", "input_schema": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}}
+    {"name": "wiki.lookup", "description": "Look up tool or guide documentation", "input_schema": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}},
+    {"name": "workspace.webfetch", "description": "Fetch a URL and return its text content", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}, "timeout": {"type": "integer", "default": 30}}, "required": ["url"]}},
+    {"name": "workspace.websearch", "description": "Search the web for a query and return results with titles, URLs, and snippets", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "default": 5}, "timeout": {"type": "integer", "default": 15}}, "required": ["query"]}}
   ]
 }
 TOOLS

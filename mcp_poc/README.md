@@ -9,6 +9,7 @@ Built with a three-phase architecture, the agent provides:
 - **Phase 2**: Semantic search and knowledge management across documentation and code
 - **Phase 3**: Task continuity and context stitching across sessions
 - **Phase 4**: Recursive exploration with ChromaDB-backed problem decomposition
+- **Web Tools**: Fetch URLs and search the web via MCP tool integration (webfetch, websearch)
 
 ## Installation & Setup
 
@@ -162,6 +163,17 @@ dree: Prefix with 're:' for regex (e.g. 're:sieve\\s+of')
 /search <query>          # Semantic search across wiki + knowledge
 ```
 
+### Web Tools (MCP)
+
+Two new web-browsing tools are available as MCP CGI scripts, auto-discovered by the agent with no Python-side changes:
+
+| Tool | CGI Script | Description |
+|------|-----------|-------------|
+| `workspace.webfetch` | `scout/cgi-bin/workspace/webfetch.py` | Fetch a URL and return text content (uses httpx, max 50K chars) |
+| `workspace.websearch` | `scout/cgi-bin/workspace/websearch.py` | Search the web via DuckDuckGo (no API key needed) |
+
+Use them to look up documentation, research best practices, fetch API references, search for error solutions, or read online guides.
+
 ### Phase 3 Commands
 ```bash
 /resume <session>        # Resume a previous session
@@ -274,7 +286,23 @@ Wrap FastAPI routes with dependency injection...
 Return X-RateLimit-Limit, X-RateLimit-Remaining, etc.
 ```
 
-### Example 6: Submitting Corrections
+### Example 6: Web Search and URL Fetching
+
+The agent can now use `workspace.websearch` and `workspace.webfetch` to browse the web:
+
+```bash
+$ python repl.py
+
+>>> Find the latest FastAPI documentation on middleware
+
+[Agent uses workspace.websearch to search, then workspace.webfetch to
+read the official FastAPI middleware docs page]
+
+Result: FastAPI middleware docs say you can add middleware via
+app.add_middleware() or with the @app.middleware() decorator...
+```
+
+### Example 7: Submitting Corrections
 ```bash
 >>> /correct error_handling
 User correction: Replace 'if x == 5:' with 'if x == 5:  # Note: magic numbers should be avoided'
@@ -465,6 +493,7 @@ class Phase3Config:
 4. **Session State → Memory Persistence**
 5. **Corrections → Correction Store**
 6. **Problem → RecursiveSolver → ChromaDB (decompose/solve/reflect/store loop)**
+7. **User Query → Ollama Model → MCP Tools → Web (webfetch/websearch)**
 
 ## Testing
 
@@ -508,6 +537,7 @@ Python version: 3.13+
 - take-minutes>=0.4.0
 - qdrant-client>=1.12.0
 - chromadb>=0.4.0
+- curl (system package for scout CGI scripts)
 
 Optional:
 - Ollama (local or remote instance)
