@@ -27,11 +27,7 @@ from tunnel_manager import TunnelManager
 
 
 async def repl():
-    tunnel_mgr = TunnelManager(
-        check_interval=30,
-        on_tunnel_healthy=lambda: print("\U0001f7e2 SSH tunnel restored"),
-        on_tunnel_unhealthy=lambda: print("\U0001f534 SSH tunnel lost - attempting recovery..."),
-    )
+    tunnel_mgr = TunnelManager()
 
     def cleanup(signum=None, frame=None):
         print("\nShutting down tunnel manager...")
@@ -40,9 +36,9 @@ async def repl():
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("Starting SSH tunnel manager...")
+    print("Checking SSH tunnel (systemd-managed)...")
     if not tunnel_mgr.start():
-        print("\u26a0\ufe0f  Failed to start tunnel manager, proceeding anyway...")
+        print("\u26a0\ufe0f  Tunnel unavailable, Ollama may not respond")
 
     try:
         agent = CodingAgent(tunnel_manager=tunnel_mgr)

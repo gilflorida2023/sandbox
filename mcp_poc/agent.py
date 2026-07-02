@@ -493,7 +493,7 @@ class CodingAgent:
     async def _requires_authorization(self, func_name: str, func_args: dict) -> bool:
         """Check if a tool call requires explicit authorization based on current mode."""
         if self.current_mode == PLAN_MODE:
-            if func_name in ['workspace.write', 'workspace.delete', 'workspace.compile', 'workspace.run']:
+            if func_name in ['workspace.write', 'workspace.delete', 'workspace.compile', 'workspace.run', 'workspace.git_clone']:
                 return True
         return False
 

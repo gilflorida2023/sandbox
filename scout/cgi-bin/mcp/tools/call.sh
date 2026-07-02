@@ -19,6 +19,7 @@ case "$TOOL_NAME" in
     wiki.lookup)        "$CGI_DIR/wiki_lookup.py" <<< "$ARGS" ;;
     workspace.webfetch)  "$CGI_DIR/webfetch.py" <<< "$ARGS" ;;
     workspace.websearch)  "$CGI_DIR/websearch.py" <<< "$ARGS" ;;
+    workspace.git_clone)  "$CGI_DIR/git_clone.py" <<< "$ARGS" ;;
     *)
         echo '{"success":false,"error":"Unknown tool: '"$TOOL_NAME"'","retryable":false}'
         exit 1
