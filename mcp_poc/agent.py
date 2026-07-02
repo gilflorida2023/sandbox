@@ -912,12 +912,16 @@ class CodingAgent:
         route = self.router.classify(user_input)
 
         if route == "direct":
-            msgs = [
-                {"role": "system", "content": self.direct_prompt},
-                {"role": "user", "content": user_input},
-            ]
+            if messages is None:
+                msgs = [
+                    {"role": "system", "content": self.direct_prompt},
+                ]
+            else:
+                msgs = messages
+            msgs.append({"role": "user", "content": user_input})
             response = await self.ollama.chat(msgs, [])
             content = response.get("message", {}).get("content", "") or ""
+            msgs.append({"role": "assistant", "content": content})
             return content, msgs
 
         # Tool route — Phase 1: Plan

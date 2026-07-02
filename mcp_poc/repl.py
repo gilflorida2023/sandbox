@@ -59,6 +59,7 @@ async def repl():
 
         command_history = []
         readline.set_history_length(500)
+        messages = None
 
         while True:
             try:
@@ -213,7 +214,7 @@ async def repl():
                     command_history.append(task)
                     readline.add_history(task)
 
-                content, _ = await agent.chat(task)
+                content, messages = await agent.chat(task, messages=messages)
                 print(content)
 
             except (EOFError, KeyboardInterrupt):
