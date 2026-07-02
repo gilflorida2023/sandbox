@@ -1,0 +1,20 @@
+[Unit]
+Description=SSH tunnel to Ollama server on m4@192.168.0.7
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -L 11434:localhost:11434 m4@192.168.0.7 -N \
+  -i /home/scout/.ssh/id_rsa \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes
+ExecStop=/usr/bin/pkill -f "ssh.*11434.*m4@192.168.0.7"
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=default.target
