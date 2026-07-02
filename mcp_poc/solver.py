@@ -80,12 +80,14 @@ class RecursiveSolver:
                     "options": {
                         "temperature": temperature,
                         "num_predict": self.max_context_tokens,
+                        "num_ctx": 262144,
                     },
                 },
                 timeout=120,
             )
             resp.raise_for_status()
-            return resp.json()["message"]["content"]
+            msg = resp.json()["message"]
+            return msg.get("content", "") or msg.get("thinking", "") or msg.get("reasoning_content", "")
         except Exception as e:
             logger.error("Chat failed: %s", e)
             return ""

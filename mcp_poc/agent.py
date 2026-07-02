@@ -636,13 +636,19 @@ class CodingAgent:
         except Exception as e:
             logger.error(f"Failed to persist change log: {e}")
 
-    def _format_output(self, plan: str, tool_log: list, final_content: str) -> str:
+    def _format_output(self, plan: str, tool_log: list, final_content: str, thinking_log: list | None = None) -> str:
         parts = [f"── Phase 1: Plan ──────────────────────────────", plan, ""]
+        if thinking_log:
+            for i, t in enumerate(thinking_log, 1):
+                parts.append(f"── Thinking {i} ─────────────────────────────")
+                parts.append(t)
+                parts.append("")
         if tool_log:
             parts.append("── Phase 2: Execution ──────────────────────────")
             parts.extend(tool_log)
             parts.append("")
         if final_content:
+            parts.append("── Response ────────────────────────────────")
             parts.append(final_content)
         return "\n".join(parts)
 
@@ -656,7 +662,11 @@ class CodingAgent:
                 {"role": "user", "content": task},
             ]
             response = await self.ollama.chat(msgs, [])
-            content = response.get("message", {}).get("content", "") or ""
+            msg = response.get("message", {})
+            content = msg.get("content", "") or ""
+            thinking = msg.get("thinking", "") or msg.get("reasoning_content", "")
+            if thinking:
+                content = f"── Thinking ─────────────────────────────\n{thinking}\n\n── Response ────────────────────────────────\n{content}"
             return content
 
         # Tool route — Phase 1: Plan
@@ -665,7 +675,8 @@ class CodingAgent:
             {"role": "user", "content": task},
         ]
         plan_resp = await self.ollama.chat(plan_msgs, [])
-        plan = self._strip_plan_json(plan_resp.get("message", {}).get("content", "") or "")
+        plan_msg = plan_resp.get("message", {})
+        plan = self._strip_plan_json(plan_msg.get("content", "") or "")
 
         # Phase 2: Execute
         try:
@@ -734,7 +745,7 @@ class CodingAgent:
                 logger.info("Injected context blob from %s", blob_file)
 
         messages.append({"role": "user", "content": task})
-        tool_log = []
+        tool_log, thinking_log = [], []
 
         for turn in range(config.agent.max_turns):
             logger.info(f"Turn {turn + 1}/{config.agent.max_turns}")
@@ -751,9 +762,12 @@ class CodingAgent:
 
             message = response.get("message", {})
             content = message.get("content", "") or ""
-            thinking = message.get("thinking", "")
+            thinking = message.get("thinking", "") or message.get("reasoning_content", "")
             tool_calls = message.get("tool_calls", [])
 
+            if thinking:
+                thinking_log.append(thinking)
+                logger.info("Thinking (%d chars): %s", len(thinking), thinking[:200])
             if not content and thinking:
                 content = thinking
 
@@ -832,11 +846,14 @@ class CodingAgent:
                 response = await self.ollama.chat(messages)
                 message = response.get("message", {})
                 content = message.get("content", "") or ""
-                thinking = message.get("thinking", "")
+                thinking = message.get("thinking", "") or message.get("reasoning_content", "")
+                if thinking:
+                    thinking_log.append(thinking)
+                    logger.info("Thinking (%d chars): %s", len(thinking), thinking[:200])
                 if not content and thinking:
                     content = thinking
                 if content:
-                    return self._format_output(plan, tool_log, content)
+                    return self._format_output(plan, tool_log, content, thinking_log)
             except Exception as e:
                 logger.error(f"Final turn error: {e}")
 
@@ -920,7 +937,11 @@ class CodingAgent:
                 msgs = messages
             msgs.append({"role": "user", "content": user_input})
             response = await self.ollama.chat(msgs, [])
-            content = response.get("message", {}).get("content", "") or ""
+            msg = response.get("message", {})
+            content = msg.get("content", "") or ""
+            thinking = msg.get("thinking", "") or msg.get("reasoning_content", "")
+            if thinking:
+                content = f"── Thinking ─────────────────────────────\n{thinking}\n\n── Response ────────────────────────────────\n{content}"
             msgs.append({"role": "assistant", "content": content})
             return content, msgs
 
@@ -930,7 +951,8 @@ class CodingAgent:
             {"role": "user", "content": user_input},
         ]
         plan_resp = await self.ollama.chat(plan_msgs, [])
-        plan = self._strip_plan_json(plan_resp.get("message", {}).get("content", "") or "")
+        plan_msg = plan_resp.get("message", {})
+        plan = self._strip_plan_json(plan_msg.get("content", "") or "")
 
         # Phase 2: Execute
         if messages is None:
@@ -964,7 +986,7 @@ class CodingAgent:
                 logger.info("Injected session context (stitched from previous sessions)")
 
         messages.append({"role": "user", "content": user_input})
-        tool_log = []
+        tool_log, thinking_log = [], []
 
         for turn in range(config.agent.max_turns):
             logger.info("Turn %d/%d", turn + 1, config.agent.max_turns)
@@ -981,9 +1003,12 @@ class CodingAgent:
 
             message = response.get("message", {})
             content = message.get("content", "") or ""
-            thinking = message.get("thinking", "")
+            thinking = message.get("thinking", "") or message.get("reasoning_content", "")
             tool_calls = message.get("tool_calls", [])
 
+            if thinking:
+                thinking_log.append(thinking)
+                logger.info("Thinking (%d chars): %s", len(thinking), thinking[:200])
             if not content and thinking:
                 content = thinking
 
@@ -1022,7 +1047,7 @@ class CodingAgent:
                     messages.append({"role": "user", "content": "Use the workspace tools to complete your plan step by step. Call one tool at a time."})
                     continue
                 logger.info("No tool calls — responding")
-                formatted = self._format_output(plan, tool_log, content)
+                formatted = self._format_output(plan, tool_log, content, thinking_log)
                 return formatted, messages
 
             for tc in tool_calls:
@@ -1060,11 +1085,14 @@ class CodingAgent:
                 response = await self.ollama.chat(messages)
                 message = response.get("message", {})
                 content = message.get("content", "") or ""
-                thinking = message.get("thinking", "")
+                thinking = message.get("thinking", "") or message.get("reasoning_content", "")
+                if thinking:
+                    thinking_log.append(thinking)
+                    logger.info("Thinking (%d chars): %s", len(thinking), thinking[:200])
                 if not content and thinking:
                     content = thinking
                 if content:
-                    formatted = self._format_output(plan, tool_log, content)
+                    formatted = self._format_output(plan, tool_log, content, thinking_log)
                     return formatted, messages
             except Exception as e:
                 logger.error("Final turn error: %s", e)
