@@ -18,6 +18,27 @@ Built with a three-phase architecture, the agent provides:
 - Ollama with models (qwen2.5-coder:7b, glm4:9b)
 - SSH tunneling setup (if accessing remote Ollama instances)
 
+### SSH Tunnel Setup (systemd)
+
+If connecting to a remote Ollama, the SSH tunnel runs as a systemd *user* service for reliability (auto-restart on failure, detached from the Python process):
+
+```bash
+# Copy the service unit
+cp deploy/ollama-tunnel.service ~/.config/systemd/user/
+
+# Enable linger so the service survives logout
+loginctl enable-linger $USER
+
+# Start the tunnel
+systemctl --user daemon-reload
+systemctl --user enable --now ollama-tunnel
+
+# Check status
+systemctl --user status ollama-tunnel
+```
+
+The unit file at `deploy/ollama-tunnel.service` uses `Restart=always`, `ServerAliveInterval=15`, and `ExitOnForwardFailure=yes` for fast dead-tunnel detection and automatic recovery.
+
 ### Installation
 ```bash
 # Clone the repository
@@ -171,8 +192,9 @@ Two new web-browsing tools are available as MCP CGI scripts, auto-discovered by 
 |------|-----------|-------------|
 | `workspace.webfetch` | `scout/cgi-bin/workspace/webfetch.py` | Fetch a URL and return text content (uses httpx, max 50K chars) |
 | `workspace.websearch` | `scout/cgi-bin/workspace/websearch.py` | Search the web via DuckDuckGo (no API key needed) |
+| `workspace.git_clone` | `scout/cgi-bin/workspace/git_clone.py` | Clone a git repository into the workspace |
 
-Use them to look up documentation, research best practices, fetch API references, search for error solutions, or read online guides.
+Use them to look up documentation, clone repositories, research best practices, fetch API references, search for error solutions, or read online guides.
 
 ### Phase 3 Commands
 ```bash
@@ -605,10 +627,16 @@ ollama serve
 #### SSH Tunnel Issues
 ```bash
 # Check tunnel status
-cat ~/.ssh/agent.log
+systemctl --user status ollama-tunnel
 
-# Re-establish tunnel if needed
-./scripts/tunnel_check.py establish
+# View logs
+journalctl --user -u ollama-tunnel -n 50
+
+# Restart if needed
+systemctl --user restart ollama-tunnel
+
+# Manual diagnostics (legacy script)
+./scout/cgi-bin/workspace/tunnel_check.py check
 ```
 
 #### Token Budget Exhaustion
