@@ -99,5 +99,17 @@ class OllamaClient:
             json=payload
         )
 
+    async def chat_with_stats(self, messages: List[Dict[str, Any]],
+                               tools: Optional[List[Dict]] = None,
+                               format: Optional[str] = None) -> tuple[str, dict]:
+        response = await self.chat(messages, tools, format)
+        content = response.get("message", {}).get("content", "")
+        stats = {
+            "prompt_tokens": response.get("prompt_eval_count", 0),
+            "completion_tokens": response.get("eval_count", 0),
+            "total_duration_ns": response.get("total_duration", 0),
+        }
+        return content, stats
+
     async def close(self):
         await self.client.aclose()

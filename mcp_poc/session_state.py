@@ -28,18 +28,7 @@ class SessionState:
                 return json.loads(self.state_file.read_text())
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Failed to load session state %s: %s", self.state_file, e)
-        return {
-            "session_id": self.session_id,
-            "created_at": time.time(),
-            "updated_at": time.time(),
-            "turn_count": 0,
-            "active_task": None,
-            "task_history": [],
-            "pending_approvals": [],
-            "conversation_summary": "",
-            "referenced_files": [],
-            "context_fragments": [],
-        }
+        return self._default_state()
 
     def save(self):
         self._state["updated_at"] = time.time()
@@ -105,8 +94,8 @@ class SessionState:
     def as_dict(self) -> Dict[str, Any]:
         return dict(self._state)
 
-    def clear(self):
-        self._state = {
+    def _default_state(self) -> Dict[str, Any]:
+        return {
             "session_id": self.session_id,
             "created_at": time.time(),
             "updated_at": time.time(),
@@ -117,7 +106,31 @@ class SessionState:
             "conversation_summary": "",
             "referenced_files": [],
             "context_fragments": [],
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "total_turns": 0,
+            "stats_snapshots": [],
         }
+
+    def record_tokens(self, prompt: int, completion: int):
+        self._state["total_prompt_tokens"] = self._state.get("total_prompt_tokens", 0) + prompt
+        self._state["total_completion_tokens"] = self._state.get("total_completion_tokens", 0) + completion
+        self._state["total_turns"] += 1
+        self.save()
+
+    def snapshot_stats(self, summary: dict):
+        snapshots = self._state.setdefault("stats_snapshots", [])
+        snapshots.append({
+            "turn": self._state.get("total_turns", 0),
+            **summary,
+            "timestamp": time.time(),
+        })
+        if len(snapshots) > 50:
+            self._state["stats_snapshots"] = snapshots[-50:]
+        self.save()
+
+    def clear(self):
+        self._state = self._default_state()
         self.save()
 
     @classmethod

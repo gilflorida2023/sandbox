@@ -1,3 +1,4 @@
+import os
 import yaml
 from dataclasses import dataclass, field
 from typing import Optional
@@ -90,6 +91,15 @@ class SolverConfig:
     compaction_interval: int = 3
 
 @dataclass
+class RlmConfig:
+    enabled: bool = True
+    max_turns_per_todo: int = 5
+    require_completion_check: bool = True
+    auto_decompose: bool = True
+    persist_discoveries: bool = True
+    storage_path: str = ""
+
+@dataclass
 class Config:
     scout: ScoutConfig = field(default_factory=ScoutConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -100,6 +110,7 @@ class Config:
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     phase3: Phase3Config = field(default_factory=Phase3Config)
     solver: SolverConfig = field(default_factory=SolverConfig)
+    rlm: RlmConfig = field(default_factory=RlmConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -142,6 +153,11 @@ class Config:
                 config.phase3.task = TaskConfig(**task_data)
         if "solver" in data:
             config.solver = SolverConfig(**data["solver"])
+        if "rlm" in data:
+            rlm_data = data["rlm"]
+            if "storage_path" not in rlm_data:
+                rlm_data["storage_path"] = os.path.join(config.workspace.path, ".todos")
+            config.rlm = RlmConfig(**rlm_data)
         return config
 
 config = Config.from_yaml("/home/scout/projects/sandbox/mcp_poc/config.yaml")

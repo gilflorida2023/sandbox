@@ -35,6 +35,9 @@ from conversation_summarizer import ConversationSummarizer
 from context_stitcher import ContextStitcher
 from task_store import TaskStore
 from correction_store import CorrectionStore
+from todo_list import TodoList
+from stats_collector import StatsCollector
+from rlm_orchestrator import RlmOrchestrator
 
 # Dual-mode system constants
 PLAN_MODE = "PLAN"
@@ -210,6 +213,18 @@ class CodingAgent:
             knowledge_indexer=self.knowledge_indexer,
         )
         
+        # Initialize RLM components
+        rlm_storage = config.rlm.storage_path or f"{config.workspace.path}/.todos"
+        self.todo_list = TodoList(rlm_storage)
+        self.stats_collector = StatsCollector()
+        self.rlm = RlmOrchestrator(
+            ollama=self.ollama,
+            todo_list=self.todo_list,
+            stats_collector=self.stats_collector,
+            embed_service=self.embed_service,
+            vector_store=self.vector_store,
+        )
+
         # Initialize Phase 3 components
         self.session_state = SessionState.resume(config.workspace.path, 
                                                  session_id if session_id else str(int(time.time())))
@@ -654,6 +669,10 @@ class CodingAgent:
 
     async def run(self, task: str) -> str:
         logger.info(f"Starting task: {task}")
+
+        if config.rlm.enabled:
+            return await self._run_rlm(task)
+
         route = self.router.classify(task)
 
         if route == "direct":
@@ -752,6 +771,10 @@ class CodingAgent:
 
             try:
                 response = await self.ollama.chat(messages, tool_schemas)
+                self.session_state.record_tokens(
+                    response.get("prompt_eval_count", 0),
+                    response.get("eval_count", 0),
+                )
             except Exception as e:
                 logger.error(f"Ollama error: {e}")
                 return f"Error communicating with Ollama: {e}"
@@ -844,6 +867,10 @@ class CodingAgent:
             logger.info("Running final summary turn")
             try:
                 response = await self.ollama.chat(messages)
+                self.session_state.record_tokens(
+                    response.get("prompt_eval_count", 0),
+                    response.get("eval_count", 0),
+                )
                 message = response.get("message", {})
                 content = message.get("content", "") or ""
                 thinking = message.get("thinking", "") or message.get("reasoning_content", "")
@@ -858,6 +885,52 @@ class CodingAgent:
                 logger.error(f"Final turn error: {e}")
 
         return "Max turns reached without completion"
+
+    async def _run_rlm(self, task: str) -> str:
+        logger.info("Running in RLM mode")
+        session_id = self.session_id or str(int(time.time()))
+        todos = await self.rlm.decompose_task(task, session_id)
+        logger.info("Decomposed into %d todos", len(todos))
+
+        responses = []
+        system_prompt = getattr(self, 'system_prompt', "")
+
+        for i, todo in enumerate(todos):
+            logger.info("RLM turn %d/%d: %s", i + 1, len(todos), todo.description[:80])
+            for _ in range(config.rlm.max_turns_per_todo):
+                user_msg = f"Continue working on: {todo.description}"
+                content, turn_stats = await self.rlm.run_turn(
+                    user_input=user_msg,
+                    session_id=session_id,
+                    system_prompt=system_prompt,
+                )
+                self.session_state.record_tokens(
+                    turn_stats.prompt_tokens,
+                    turn_stats.completion_tokens,
+                )
+                responses.append(f"[{todo.id[:8]}] {content}")
+
+                current = self.todo_list.get_todo(todo.id)
+                if current and current.status == "completed":
+                    logger.info("Todo %s completed", todo.id[:8])
+                    break
+
+        summary = self.stats_collector.get_summary()
+        self.session_state.snapshot_stats({
+            "total_turns": summary.total_turns,
+            "total_prompt_tokens": summary.total_prompt_tokens,
+            "total_completion_tokens": summary.total_completion_tokens,
+            "truncation_rate": summary.truncation_rate,
+            "self_ref_rate": summary.self_ref_rate,
+        })
+
+        output = ["═══ RLM Session Complete ═══"]
+        completion = self.todo_list.completion_rate()
+        counts = self.todo_list.count_by_status()
+        output.append(f"Todos: {counts.get('completed', 0)}/{sum(counts.values())} completed ({completion * 100:.0f}%)")
+        output.append("")
+        output.extend(responses)
+        return "\n".join(output)
 
     async def build_preamble(self) -> tuple[list, list]:
         """Fetch tools, build system prompt + schemas. Call once per session.
@@ -943,6 +1016,10 @@ class CodingAgent:
             if thinking:
                 content = f"── Thinking ─────────────────────────────\n{thinking}\n\n── Response ────────────────────────────────\n{content}"
             msgs.append({"role": "assistant", "content": content})
+            self.session_state.record_tokens(
+                response.get("prompt_eval_count", 0),
+                response.get("eval_count", 0),
+            )
             return content, msgs
 
         # Tool route — Phase 1: Plan
@@ -993,6 +1070,10 @@ class CodingAgent:
 
             try:
                 response = await self.ollama.chat(messages, tool_schemas)
+                self.session_state.record_tokens(
+                    response.get("prompt_eval_count", 0),
+                    response.get("eval_count", 0),
+                )
             except Exception as e:
                 logger.error("Ollama error: %s", e)
                 return f"Error communicating with Ollama: {e}", messages
@@ -1083,6 +1164,10 @@ class CodingAgent:
             logger.info("Running final summary turn")
             try:
                 response = await self.ollama.chat(messages)
+                self.session_state.record_tokens(
+                    response.get("prompt_eval_count", 0),
+                    response.get("eval_count", 0),
+                )
                 message = response.get("message", {})
                 content = message.get("content", "") or ""
                 thinking = message.get("thinking", "") or message.get("reasoning_content", "")

@@ -66,3 +66,10 @@ solver:
   max_context_tokens: 1024
   retrieval_top_k: 3
   compaction_interval: 3
+
+rlm:
+  enabled: true
+  max_turns_per_todo: 5
+  require_completion_check: true
+  auto_decompose: true
+  persist_discoveries: true

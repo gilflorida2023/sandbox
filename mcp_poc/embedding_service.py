@@ -16,8 +16,12 @@ class EmbeddingService:
         self._dimension: Optional[int] = None
         self._cache: Dict[str, List[float]] = {}
         self._max_cache = 2048
+        self.call_count: int = 0
+        self.total_chars: int = 0
 
     def embed(self, text: str) -> List[float]:
+        self.call_count += 1
+        self.total_chars += len(text)
         batch = self.embed_batch([text])
         return batch[0] if batch else []
 
