@@ -82,6 +82,14 @@ class Phase3Config:
     task: TaskConfig = field(default_factory=TaskConfig)
 
 @dataclass
+class SolverConfig:
+    chroma_path: str = ""
+    max_iterations: int = 20
+    max_context_tokens: int = 1024
+    retrieval_top_k: int = 3
+    compaction_interval: int = 3
+
+@dataclass
 class Config:
     scout: ScoutConfig = field(default_factory=ScoutConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -91,6 +99,7 @@ class Config:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     phase3: Phase3Config = field(default_factory=Phase3Config)
+    solver: SolverConfig = field(default_factory=SolverConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -131,6 +140,8 @@ class Config:
                 config.phase3.correction = CorrectionConfig(**correction_data)
             if task_data:
                 config.phase3.task = TaskConfig(**task_data)
+        if "solver" in data:
+            config.solver = SolverConfig(**data["solver"])
         return config
 
 config = Config.from_yaml("/home/scout/projects/sandbox/mcp_poc/config.yaml")

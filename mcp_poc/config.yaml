@@ -59,3 +59,10 @@ phase3:
 
   task:
     storage_path: "/home/scout/projects/sandbox/workspace/.tasks"
+
+solver:
+  chroma_path: "/home/scout/projects/sandbox/workspace/.explorations"
+  max_iterations: 20
+  max_context_tokens: 1024
+  retrieval_top_k: 3
+  compaction_interval: 3

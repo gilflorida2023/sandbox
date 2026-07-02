@@ -22,7 +22,7 @@ from config import config
 
 logging.basicConfig(level=logging.WARNING)
 
-from agent import CodingAgent, PLAN_MODE, BUILD_MODE
+from agent import CodingAgent, PLAN_MODE, BUILD_MODE, EXPLORE_MODE
 from tunnel_manager import TunnelManager
 
 
@@ -58,6 +58,7 @@ async def repl():
         print("  /summarize <n>   — generate conversation summary")
         print("  /task <action>   — manage tasks (add/show/update)")
         print("  /correct <id> <feedback> — submit user correction")
+        print("  /explore <problem> — start recursive exploration")
         print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})\n")
 
         command_history = []
@@ -172,6 +173,18 @@ async def repl():
                     print("Example: /task add 'Implement Phase 3'")
                     print("Example: /task show 1")
                     print("Example: /task update 1 status 'completed'")
+                    continue
+
+                elif raw_input.startswith("/explore "):
+                    problem = raw_input[len("/explore "):].strip()
+                    if not problem:
+                        print("\nUsage: /explore <problem_description>")
+                    else:
+                        print(f"\n=== Starting Recursive Exploration ===")
+                        print(f"Problem: {problem}")
+                        result, metadata = await agent.explore(problem)
+                        print(f"\n=== Exploration Result ===")
+                        print(result)
                     continue
 
                 elif raw_input.startswith("/correct "):

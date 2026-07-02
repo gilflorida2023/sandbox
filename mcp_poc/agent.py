@@ -232,6 +232,35 @@ class CodingAgent:
         self.router = QueryRouter()
         self.learned_tools = set()
         self.session_id = session_id
+
+        # Phase 4: Recursive exploration system
+        self.EXPLORE_MODE = "EXPLORE"
+
+    async def explore(self, task: str, exploration_id: str = "") -> tuple[str, dict]:
+        """Start a recursive exploration session.
+        
+        Args:
+            task: The problem to explore recursively
+            exploration_id: Optional ID for this exploration (generated if empty)
+            
+        Returns:
+            Tuple of (result, exploration_metadata)
+        """
+        from solver import RecursiveSolver
+
+        # Initialize RecursiveSolver with ChromaDB
+        solver = RecursiveSolver(
+            workspace_path=config.workspace.path,
+            exploration_id=exploration_id,
+            max_iterations=config.solver.max_iterations,
+            max_context_tokens=config.solver.max_context_tokens,
+            compaction_interval=config.solver.compaction_interval,
+            ollama_host=config.ollama.host,
+            ollama_port=config.ollama.port,
+            ollama_model=config.ollama.model,
+        )
+
+        return await solver.explore(task)
         self.session_logger = SessionLogger(
             workspace_path=config.workspace.path,
             ollama_host=config.ollama.host,
@@ -1135,9 +1164,11 @@ __all__ = [
     'CodingAgent',
     'PLAN_MODE',
     'BUILD_MODE',
+    'EXPLORE_MODE',
     'switch_mode',
     'execute_tool_with_protection',
     '_requires_authorization',
     '_confirm_change',
     '_record_change',
+    'explore',
 ]

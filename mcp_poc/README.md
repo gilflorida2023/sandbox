@@ -8,6 +8,7 @@ Built with a three-phase architecture, the agent provides:
 - **Phase 1**: Safety-first development with user approval gates and contamination protection
 - **Phase 2**: Semantic search and knowledge management across documentation and code
 - **Phase 3**: Task continuity and context stitching across sessions
+- **Phase 4**: Recursive exploration with ChromaDB-backed problem decomposition
 
 ## Installation & Setup
 
@@ -131,6 +132,22 @@ Stores user corrections to prevent repeated mistakes:
 - Semantic search for corrections
 - Context preservation for future reference
 
+### Phase 4: Recursive Exploration System
+
+#### Recursive Solver (`RecursiveSolver`)
+Autonomous recursive problem solving with ChromaDB-backed memory:
+
+- **Problem Decomposition**: Breaks complex problems into independently solvable sub-problems
+- **Recursive Loop**: decompose → retrieve → solve → store → reflect → check → repeat
+- **ChromaDB Memory**: Per-exploration vector store for persistent context across iterations
+- **Compaction**: Automatic summarization every N iterations (configurable, default 3)
+- **Convergence Detection**: Self-evaluation to determine when the problem is solved
+- **Ollama Embeddings**: Uses `nomic-embed-text` via existing Ollama pipeline
+
+#### Exploration Naming
+- Format: `explore_<YYYYMMDD_HHMMSS>` (auto-generated from timestamp)
+- Stored at: `workspace/.explorations/<exploration_id>/`
+
 ## REPL Commands
 
 ### Core Commands
@@ -151,6 +168,11 @@ dree: Prefix with 're:' for regex (e.g. 're:sieve\\s+of')
 /summarize <n>           # Generate conversation summary (last n turns)
 /task <action>           # Manage tasks (add/show/update)
 /correct <id> <feedback> # Submit user correction
+```
+
+### Phase 4 Commands
+```bash
+/explore <problem>       # Start recursive exploration of a complex problem
 ```
 
 ## Usage Examples
@@ -224,7 +246,35 @@ Code created: []
 Task updated: task_abc123
 ```
 
-### Example 5: Submitting Corrections
+### Example 5: Recursive Exploration with `/explore`
+```bash
+$ python repl.py
+
+>>> /explore Design a rate-limiting middleware for the REST API
+
+=== Starting Recursive Exploration ===
+Problem: Design a rate-limiting middleware for the REST API
+
+[Agent iterates through decomposition, solution, reflection cycles...
+Stores intermediate findings in ChromaDB for context retention]
+
+=== Exploration Result ===
+## Rate Limiting Middleware Design
+
+### 1. Token Bucket Algorithm
+Implement a token bucket with configurable refill rate and capacity...
+
+### 2. Redis-backed Counter
+Use Redis INCR with TTL for distributed rate tracking...
+
+### 3. Middleware Integration
+Wrap FastAPI routes with dependency injection...
+
+### 4. Headers & Responses
+Return X-RateLimit-Limit, X-RateLimit-Remaining, etc.
+```
+
+### Example 6: Submitting Corrections
 ```bash
 >>> /correct error_handling
 User correction: Replace 'if x == 5:' with 'if x == 5:  # Note: magic numbers should be avoided'
@@ -265,6 +315,17 @@ class AgentConfig:
         conversation_tokens: int = 500
         knowledge_tokens: int = 500
         task_tokens: int = 500
+```
+
+### Phase 4 Configuration
+
+```yaml
+solver:
+  chroma_path: "/home/scout/projects/sandbox/workspace/.explorations"
+  max_iterations: 20          # Maximum recursive iterations
+  max_context_tokens: 1024    # Token budget per solver turn
+  retrieval_top_k: 3          # ChromaDB results per query
+  compaction_interval: 3      # Summarize every N iterations
 ```
 
 ### Phase 3 Configuration
@@ -377,6 +438,22 @@ class Phase3Config:
 │   │ │    (correction_store.py)     │             │
 │   │ └─────────────────────────────┘             │
 │   └─────────────────────────────────────────────┘
+│
+│   ┌─────────────────────▲─────────────────────────────────┐
+│   │                     │                                 │
+│   ┌─────────────────────┼─────────────────┐               │
+│   │   PHASE 4: RECURSIVE EXPLORATION                    │
+│   │                                           │
+│   │ ┌─────────────────────────────┐             │
+│   │ │      RecursiveSolver       │             │
+│   │ │       (solver.py)          │             │
+│   │ │                            │             │
+│   │ │ ┌────────────────────────┐ │             │
+│   │ │ │   ChromaDB (per        │ │             │
+│   │ │ │   exploration)         │ │             │
+│   │ │ └────────────────────────┘ │             │
+│   │ └─────────────────────────────┘             │
+│   └─────────────────────────────────────────────┘
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -387,6 +464,7 @@ class Phase3Config:
 3. **Knowledge Indexer → Vector Store (semantic search)**
 4. **Session State → Memory Persistence**
 5. **Corrections → Correction Store**
+6. **Problem → RecursiveSolver → ChromaDB (decompose/solve/reflect/store loop)**
 
 ## Testing
 
@@ -429,6 +507,7 @@ Python version: 3.13+
 - rich>=13.0.0
 - take-minutes>=0.4.0
 - qdrant-client>=1.12.0
+- chromadb>=0.4.0
 
 Optional:
 - Ollama (local or remote instance)
@@ -449,6 +528,7 @@ Optional:
 - **Session fragments**: 1000 max per session
 - **Correction storage**: 50 max per topic
 - **Task storage**: 100 max concurrent tasks
+- **Exploration storage**: Per-exploration ChromaDB under `.explorations/`
 
 ### Limitations
 
