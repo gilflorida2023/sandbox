@@ -68,7 +68,7 @@ solver:
   compaction_interval: 3
 
 rlm:
-  enabled: true
+  enabled: false
   max_turns_per_todo: 5
   require_completion_check: true
   auto_decompose: true

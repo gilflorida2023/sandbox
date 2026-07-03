@@ -58,13 +58,15 @@ class RecursiveSolver:
 
     def _embed(self, text: str) -> list[float]:
         try:
-            resp = self._httpx.post(
-                f"{self._ollama_base}/api/embeddings",
-                json={"model": "nomic-embed-text", "prompt": text},
-                timeout=30,
+            from embedding_service import EmbeddingService
+            embed_service = EmbeddingService(
+                host=self.ollama_host,
+                port=self.ollama_port,
+                model="nomic-embed-text"
             )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
+            result = embed_service.embed(text)
+            embed_service.close()
+            return result
         except Exception as e:
             logger.error("Embedding failed: %s", e)
             return [0.0] * 768

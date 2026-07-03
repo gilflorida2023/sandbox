@@ -20,6 +20,14 @@ class TurnStats:
     clarification_requests: int = 0
     duration_ns: int = 0
     embedding_calls: int = 0
+    tool_calls_attempted: int = 0
+    tool_calls_executed: int = 0
+    tool_calls_failed: int = 0
+    content_type: str = "unknown"
+    loop_count: int = 0
+    response_preview: str = ""
+    context_util_pct: float = 0.0
+    thinking: str = ""
 
     @property
     def total_tokens(self) -> int:

@@ -53,10 +53,41 @@ class EmbeddingService:
                     if len(self._cache) > self._max_cache:
                         oldest = next(iter(self._cache))
                         del self._cache[oldest]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    logger.warning("New /api/embed endpoint not found, falling back to /api/embeddings")
+                    return self._embed_batch_fallback(uncached, texts)
+                else:
+                    logger.error("Embedding API call failed: %s", e)
+                    return []
             except Exception as e:
                 logger.error("Embedding API call failed: %s", e)
                 return []
         result = [self._cache.get(self._cache_key(t), []) for t in texts]
+        return result
+
+    def _embed_batch_fallback(self, uncached: List[str], all_texts: List[str]) -> List[List[float]]:
+        """Fallback to /api/embeddings endpoint for older Ollama versions."""
+        for t in uncached:
+            try:
+                resp = self._client.post(
+                    f"{self.base_url}/api/embeddings",
+                    json={"model": self.model, "prompt": t},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                emb = data.get("embedding", [])
+                if self._dimension is None and emb:
+                    self._dimension = len(emb)
+                key = self._cache_key(t)
+                self._cache[key] = emb
+                if len(self._cache) > self._max_cache:
+                    oldest = next(iter(self._cache))
+                    del self._cache[oldest]
+            except Exception as e:
+                logger.error("Embedding API fallback call failed: %s", e)
+                return []
+        result = [self._cache.get(self._cache_key(t), []) for t in all_texts]
         return result
 
     def embed_query(self, query: str) -> List[float]:

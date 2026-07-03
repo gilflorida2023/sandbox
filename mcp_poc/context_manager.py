@@ -63,10 +63,13 @@ class ContextManager:
 
     def get_relevant_context(self, query: str, max_tokens: int = 2000) -> Optional[str]:
         """Return relevant context by combining wiki docs + knowledge chunks."""
+        logger.info("Context injection started: query=%r, budget=%d tokens", query[:100], max_tokens)
         query_lower = query.lower()
         parts = []
 
         budget = max_tokens
+        matched_tools = 0
+        matched_guides = 0
 
         # 1 — Wiki tool docs
         for tool_name in self.wiki.get_all_tool_names():
@@ -80,6 +83,7 @@ class ContextManager:
                         d = d[:budget * 4]
                     parts.append(d)
                     budget -= _estimate_tokens(d)
+                    matched_tools += 1
                     if budget <= 0:
                         logger.warning("Token budget exhausted after wiki docs")
                         break
@@ -97,6 +101,7 @@ class ContextManager:
                             d = d[:max(budget * 4, 0)]
                         parts.append(d)
                         budget -= _estimate_tokens(d)
+                        matched_guides += 1
                         if budget <= 0:
                             logger.warning("Token budget exhausted after wiki guides")
                             break
@@ -117,6 +122,8 @@ class ContextManager:
                                    _estimate_tokens(combined), budget)
                     combined = combined[:max(budget * 4, 0)]
                 parts.append(combined)
+                logger.info("Knowledge chunks matched: %d results, %d tokens",
+                           len(chunks), _estimate_tokens(combined))
 
         # 4 — Semantic search results (embedding-based)
         if budget > 0 and self.knowledge_indexer is not None and self.knowledge_indexer._indexed:
@@ -130,12 +137,21 @@ class ContextManager:
                                    _estimate_tokens(semantic_block), budget)
                     semantic_block = semantic_block[:max(budget * 4, 0)]
                 parts.append(semantic_block)
+                logger.info("Semantic search results: %d results, %d tokens",
+                           len(semantic_results), _estimate_tokens(semantic_block))
+            else:
+                logger.info("Semantic search returned no results")
+        else:
+            logger.info("Semantic search skipped (indexer ready=%s)",
+                       self.knowledge_indexer._indexed if self.knowledge_indexer else False)
 
         if not parts:
             getting_started = self.wiki.get_guide("getting_started")
             if getting_started:
                 gs = getting_started[:max(max_tokens * 4, 0)]
+                logger.info("No context sources matched, falling back to getting_started guide")
                 return gs
+            logger.info("No context sources matched and no getting_started guide")
             return None
 
         result = "\n\n".join(parts)
@@ -143,6 +159,8 @@ class ContextManager:
             logger.warning("Final context truncated from %d to %d tokens",
                            _estimate_tokens(result), max_tokens)
             result = result[:max_tokens * 4]
+        logger.info("Context injection complete: %d sources (tools=%d, guides=%d), %d tokens total",
+                   len(parts), matched_tools, matched_guides, _estimate_tokens(result))
         return result
 
     def add_knowledge(self, content: str, source: str = "agent",
@@ -160,6 +178,7 @@ class ContextManager:
         """Return top-weighted knowledge as a formatted string."""
         chunks = self.knowledge.window(max_size)
         if not chunks:
+            logger.info("Knowledge window empty (no chunks available)")
             return ""
         lines = ["=== Accumulated Knowledge (Window) ==="]
         budget = max_tokens
@@ -174,6 +193,8 @@ class ContextManager:
                 break
             lines.append(entry)
             budget -= _estimate_tokens(entry)
+        logger.info("Knowledge window: %d/%d chunks returned, %d tokens used",
+                   len(lines) - 1, len(chunks), max_tokens - budget)
         return "\n".join(lines)
 
     def ingest_session_log(self, log_path: str) -> int:

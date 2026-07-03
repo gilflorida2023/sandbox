@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive REPL for the coding agent — with automatic SSH tunnel management."""
+"""Interactive REPL for the coding agent."""
 import os
 import sys
 from pathlib import Path
@@ -17,31 +17,34 @@ import readline
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import config for tunnel settings
-from config import config
-
 logging.basicConfig(level=logging.WARNING)
 
 from agent import CodingAgent, PLAN_MODE, BUILD_MODE, EXPLORE_MODE
-from tunnel_manager import TunnelManager
+
 
 
 async def repl():
-    tunnel_mgr = TunnelManager()
-
     def cleanup(signum=None, frame=None):
-        print("\nShutting down tunnel manager...")
-        tunnel_mgr.stop()
+        pass
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("Checking SSH tunnel (systemd-managed)...")
-    if not tunnel_mgr.start():
-        print("\u26a0\ufe0f  Tunnel unavailable, Ollama may not respond")
-
     try:
-        agent = CodingAgent(tunnel_manager=tunnel_mgr)
+        agent = CodingAgent()
+        
+        # One-time startup check - fail fast if Ollama not reachable
+        try:
+            await agent.ollama.ensure_connected()
+            print(f"✅ Ollama accessible via SSH tunnel at localhost:11434")
+        except ConnectionError as e:
+            print(f"❌ {e}")
+            print(f"\nTo start the SSH tunnel, run:")
+            print(f"   ssh -L 11434:localhost:11434 m4@192.168.0.7 -N -f")
+            print(f"\nOr, if port 11434 is in use:")
+            print(f"   kill -9 $(lsof -ti:11434)")
+            print(f"   ssh -L 11434:localhost:11434 m4@192.168.0.7 -N -f")
+            return
         print(f"Model: {agent.ollama.model}")
         print("Type 'exit' or Ctrl-D to quit.")
         print("  /plan | /build  — switch modes")
@@ -51,18 +54,11 @@ async def repl():
         print("  /blacklist <p>  — add contamination pattern ('re:' prefix = regex)")
         print("  /search <q>     — semantic search across wiki + knowledge")
         print("  /resume <id>    — resume a previous session")
-        print("  /summarize <n>   — generate conversation summary")
-        print("  /task <action>   — manage tasks (add/show/update)")
+        print("  /summarize <n>  — generate conversation summary")
         print("  /correct <id> <feedback> — submit user correction")
         print("  /explore <problem> — start recursive exploration")
-        print("  /rlm status       — RLM todo list + progress")
-        print("  /rlm start <task> — decompose and start RLM loop")
-        print("  /rlm reset        — clear all todos")
-        print("  /stats            — telemetry dashboard")
-        print("  /todo list        — show all todos")
-        print("  /todo add <desc>  — add a todo")
-        print("  /todo done <id>   — mark todo completed")
-        print("  /todo block <id>  — mark todo blocked")
+        print("  /rlm status     — RLM todo list + progress")
+        print("  /stats          — telemetry dashboard")
         print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})\n")
 
         command_history = []
@@ -172,14 +168,6 @@ async def repl():
                         print("\nUsage: /summarize <number_of_turns>")
                     continue
 
-                elif raw_input == "/task":
-                    print("\n=== Task Management ===")
-                    print("Available actions: add, show, update")
-                    print("Example: /task add 'Implement Phase 3'")
-                    print("Example: /task show 1")
-                    print("Example: /task update 1 status 'completed'")
-                    continue
-
                 elif raw_input.startswith("/explore "):
                     problem = raw_input[len("/explore "):].strip()
                     if not problem:
@@ -224,80 +212,28 @@ async def repl():
                     print(f"  Session tokens: P={ss.get('total_prompt_tokens', 0)} / C={ss.get('total_completion_tokens', 0)}")
                     continue
 
-                elif raw_input.startswith("/rlm "):
-                    cmd = raw_input[5:].strip()
-                    if cmd == "status":
-                        counts = agent.todo_list.count_by_status()
-                        print(f"\n=== RLM Status ===")
-                        print(f"  Completion: {agent.todo_list.completion_rate() * 100:.0f}%")
-                        print(f"  In Progress: {counts.get('in_progress', 0)}")
-                        print(f"  Pending:     {counts.get('pending', 0)}")
-                        print(f"  Completed:   {counts.get('completed', 0)}")
-                        print(f"  Blocked:     {counts.get('blocked', 0)}")
-                        todos = agent.todo_list.get_all_todos()
-                        if todos:
-                            print(f"\n  Todos ({len(todos)}):")
-                            for t in todos:
-                                prefix = "[✓]" if t.status == "completed" else \
-                                         "[▶]" if t.status == "in_progress" else \
-                                         "[⊘]" if t.status == "blocked" else "[ ]"
-                                print(f"    {prefix} {t.id[:8]} {t.description[:60]}")
-                        summary = agent.stats_collector.get_summary()
-                        print(f"\n  Turns: {summary.total_turns}")
-                    elif cmd.startswith("start "):
-                        task = cmd[6:].strip()
-                        if task:
-                            print(f"\n=== Decomposing task via RLM ===")
-                            result = await agent.run(task)
-                            print(result)
-                        else:
-                            print("\nUsage: /rlm start <task>")
-                    elif cmd == "reset":
-                        agent.todo_list.reset_session(agent.session_id or "")
-                        agent.stats_collector.clear()
-                        print("\nRLM state reset.")
-                    else:
-                        print("\nUsage: /rlm status | /rlm start <task> | /rlm reset")
+                elif raw_input == "/rlm status":
+                    counts = agent.todo_list.count_by_status()
+                    print(f"\n=== RLM Status ===")
+                    print(f"  Completion: {agent.todo_list.completion_rate() * 100:.0f}%")
+                    print(f"  In Progress: {counts.get('in_progress', 0)}")
+                    print(f"  Pending:     {counts.get('pending', 0)}")
+                    print(f"  Completed:   {counts.get('completed', 0)}")
+                    print(f"  Blocked:     {counts.get('blocked', 0)}")
+                    todos = agent.todo_list.get_all_todos()
+                    if todos:
+                        print(f"\n  Todos ({len(todos)}):")
+                        for t in todos:
+                            prefix = "[✓]" if t.status == "completed" else \
+                                     "[▶]" if t.status == "in_progress" else \
+                                     "[⊘]" if t.status == "blocked" else "[ ]"
+                            print(f"    {prefix} {t.id[:8]} {t.description[:60]}")
+                    summary = agent.stats_collector.get_summary()
+                    print(f"\n  Turns: {summary.total_turns}")
                     continue
 
-                elif raw_input.startswith("/todo "):
-                    cmd = raw_input[6:].strip()
-                    if cmd == "list" or cmd.startswith("list"):
-                        todos = agent.todo_list.get_all_todos()
-                        if not todos:
-                            print("\nNo todos.")
-                        else:
-                            print(f"\n=== Todos ({len(todos)}) ===")
-                            for t in todos:
-                                prefix = "[✓]" if t.status == "completed" else \
-                                         "[▶]" if t.status == "in_progress" else \
-                                         "[⊘]" if t.status == "blocked" else "[ ]"
-                                print(f"  {prefix} {t.id[:8]} {t.description}")
-                    elif cmd.startswith("add "):
-                        desc = cmd[4:].strip()
-                        if desc:
-                            todo = agent.todo_list.create_todo(desc, agent.session_id or "")
-                            print(f"\nCreated todo: {todo.id[:8]} {desc}")
-                        else:
-                            print("\nUsage: /todo add <description>")
-                    elif cmd.startswith("done "):
-                        todo_id = cmd[5:].strip()
-                        todo = agent.todo_list.get_todo(todo_id)
-                        if todo:
-                            agent.todo_list.update_status(todo_id, "completed")
-                            print(f"\nTodo {todo_id[:8]} marked completed: {todo.description[:60]}")
-                        else:
-                            print(f"\nTodo {todo_id} not found")
-                    elif cmd.startswith("block "):
-                        todo_id = cmd[6:].strip()
-                        todo = agent.todo_list.get_todo(todo_id)
-                        if todo:
-                            agent.todo_list.update_status(todo_id, "blocked")
-                            print(f"\nTodo {todo_id[:8]} marked blocked: {todo.description[:60]}")
-                        else:
-                            print(f"\nTodo {todo_id} not found")
-                    else:
-                        print("\nUsage: /todo list | /todo add <desc> | /todo done <id> | /todo block <id>")
+                elif raw_input.startswith("/rlm "):
+                    print("\nUsage: /rlm status")
                     continue
 
                 if raw_input.lower() in ("exit", "quit"):
@@ -312,7 +248,7 @@ async def repl():
                     command_history.append(task)
                     readline.add_history(task)
 
-                content, messages = await agent.chat(task, messages=messages)
+                content = await agent.run(task)
                 print(content)
 
             except (EOFError, KeyboardInterrupt):

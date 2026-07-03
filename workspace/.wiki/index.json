@@ -132,10 +132,11 @@
       "wiki_file": "tools/websearch.md"
     }
   ],
-  "guides": [
-    {"name": "getting_started", "file": "guides/getting_started.md"},
-    {"name": "go_development", "file": "guides/go_development.md"},
-    {"name": "python_development", "file": "guides/python_development.md"},
-    {"name": "searching_code", "file": "guides/searching_code.md"}
-  ]
+    "guides": [
+      {"name": "getting_started", "file": "guides/getting_started.md"},
+      {"name": "go_development", "file": "guides/go_development.md"},
+      {"name": "python_development", "file": "guides/python_development.md"},
+      {"name": "searching_code", "file": "guides/searching_code.md"},
+      {"name": "git_cloning", "file": "guides/git_cloning.md"}
+    ]
 }
