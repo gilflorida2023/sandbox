@@ -11,10 +11,8 @@ if sys.executable != str(_venv_python) and _venv_python.exists():
 import asyncio
 import json
 import logging
-from typing import Optional
 import hashlib
 import time
-from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -26,7 +24,6 @@ from tool_wiki import ToolWiki
 from context_manager import ContextManager
 from session_log import SessionLogger
 from router import QueryRouter
-from tunnel_manager import TunnelManager
 from embedding_service import EmbeddingService
 from vector_store import VectorStore
 from knowledge_indexer import KnowledgeIndexer
@@ -70,6 +67,7 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
             if isinstance(args, str):
                 args = json.loads(args)
             calls.append({"name": data["name"], "arguments": args})
+            logger.info("Parsed tool call via direct JSON: %s", data["name"])
             return calls
     except (json.JSONDecodeError, TypeError):
         pass
@@ -85,6 +83,7 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
                         args = json.loads(args)
                     calls.append({"name": item["name"], "arguments": args})
             if calls:
+                logger.info("Parsed %d tool calls via JSON array", len(calls))
                 return calls
     except (json.JSONDecodeError, TypeError):
         pass
@@ -134,6 +133,7 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
                                     if isinstance(args, str):
                                         args = json.loads(args)
                                     calls.append({"name": data["name"], "arguments": args})
+                                    logger.info("Parsed tool call via markdown block: %s", data["name"])
                             except (json.JSONDecodeError, TypeError):
                                 pass
                             idx = end_idx + 1
@@ -176,18 +176,22 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
                                 if isinstance(args, str):
                                     args = json.loads(args)
                                 calls.append({"name": data["name"], "arguments": args})
+                                logger.info("Parsed tool call via embedded JSON: %s", data["name"])
                                 return calls
                         except (json.JSONDecodeError, TypeError):
                             pass
                         break
 
+    if not calls:
+        logger.warning("No text-parsed tool calls in %d chars (content preview: %r)",
+                      len(content), content[:200])
     return calls
 
 
 class CodingAgent:
-    def __init__(self, session_id: str = "", tunnel_manager: Optional[TunnelManager] = None):
+    def __init__(self, session_id: str = ""):
         self.mcp = MCPClient()
-        self.ollama = OllamaClient(tunnel_manager=tunnel_manager)
+        self.ollama = OllamaClient()
         self.wiki = ToolWiki()
 
         # Phase 2: Semantic search infrastructure
@@ -223,6 +227,7 @@ class CodingAgent:
             stats_collector=self.stats_collector,
             embed_service=self.embed_service,
             vector_store=self.vector_store,
+            mcp_client=self.mcp,
         )
 
         # Initialize Phase 3 components
@@ -246,7 +251,6 @@ class CodingAgent:
         self.direct_prompt = (Path(__file__).parent / "prompts/direct_prompt.txt").read_text()
         self.plan_prompt = (Path(__file__).parent / "prompts/plan_prompt.txt").read_text()
         self.router = QueryRouter()
-        self.learned_tools = set()
         self.session_id = session_id
         self.session_logger = SessionLogger(
             workspace_path=config.workspace.path,
@@ -257,11 +261,7 @@ class CodingAgent:
 
         # Initialize dual-mode system
         self.current_mode = PLAN_MODE
-        self.mode_switch_count = 0
-        self.protection_cache = {}
-        self.pending_changes = {}
         self.change_log = []
-        self.current_user = "system"
 
         # Knowledge ingestion on startup is disabled by default.
         # Past session logs can contain task-specific noise (e.g. prime sieve code)
@@ -400,17 +400,6 @@ class CodingAgent:
                     fixed = True
                     continue
 
-            m3 = unclosed_string.search(lines[i])
-            m4 = unclosed_string2.search(lines[i])
-            if (m3 or m4):
-                next_line = lines[i+1].strip()
-                # Line ends with unclosed single/double-quoted string
-                # Next line starts with a continuation pattern like + '...' or "
-                if next_line.startswith("+ '") or next_line.startswith('+ "') or \
-                   next_line.startswith("'") or next_line.startswith('"'):
-                    # This might be an intended \n — join
-                    pass  # too risky to auto-fix without more context
-
             new_lines.append(lines[i])
             i += 1
 
@@ -536,8 +525,6 @@ class CodingAgent:
                 print(f"  - Delete file/directory: {path}")
             elif func_name == 'workspace.compile':
                 print(f"  - Compile source: {path}")
-            elif func_name == 'workspace.run':
-                print(f"  - Execute: {path}")
             print(f"\nEnter 'y' to approve, or any other key to reject:")
             
             try:
@@ -628,10 +615,9 @@ class CodingAgent:
 
     def persist_change_log(self):
         """Persist the change log to the workspace for audit purposes."""
-        if not hasattr(self, 'change_log') or not self.change_log:
+        if not self.change_log:
             return
         
-        import json
         log_path = Path(config.workspace.path) / "dual-mode-change-log.json"
         
         try:
@@ -738,10 +724,18 @@ class CodingAgent:
         wiki_context = self.context.get_relevant_context(task, max_tokens=config.agent.max_context_tokens)
         if wiki_context:
             messages.insert(1, {"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
+            logger.info("Injected wiki context: %d chars, ~%d tokens",
+                       len(wiki_context), len(wiki_context) // 4)
+        else:
+            logger.info("No wiki context available for query")
 
         kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
+            logger.info("Injected knowledge window: %d chars, ~%d tokens",
+                       len(kb_window), len(kb_window) // 4)
+        else:
+            logger.info("Knowledge window empty, skipping injection")
 
         # Phase 3: Context stitching from previous sessions
         if self.session_id and config.phase3.session.score_threshold is not None:
@@ -753,7 +747,11 @@ class CodingAgent:
             )
             if session_context:
                 messages.insert(1, {"role": "system", "content": session_context})
-                logger.info("Injected session context (stitched from previous sessions)")
+                logger.info("Injected session context: %d chars, ~%d tokens",
+                           len(session_context), len(session_context) // 4)
+            else:
+                logger.info("No session context available (score_threshold=%.2f)",
+                           config.phase3.session.score_threshold)
 
         if self.session_id:
             ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
@@ -761,7 +759,10 @@ class CodingAgent:
             if blob_file.exists():
                 blob = blob_file.read_text()
                 messages.insert(1, {"role": "system", "content": f"## Codebase Context\n\n{blob}"})
-                logger.info("Injected context blob from %s", blob_file)
+                logger.info("Injected context blob: %d chars, ~%d tokens",
+                           len(blob), len(blob) // 4)
+            else:
+                logger.info("Context blob not found at %s", blob_file)
 
         messages.append({"role": "user", "content": task})
         tool_log, thinking_log = [], []
@@ -846,11 +847,16 @@ class CodingAgent:
 
                 try:
                     result = await self.execute_tool_with_protection(func_name, func_args)
+                    # Inject error feedback so the LLM can self-correct
+                    if not result.get("success") and func_name == "wiki.lookup":
+                        available = self.wiki.get_all_tool_names() + self.wiki.get_all_guide_names()
+                        result["suggestion"] = f"Available topics: {', '.join(available)}"
                     result_str = json.dumps(result)
                     logger.info(f"Result: {result_str[:500]}")
                     messages.append({
-                        "role": "user",
+                        "role": "tool",
                         "content": f"Result of {func_name}: {result_str}\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                        "tool_call_id": tc.get("id", ""),
                     })
                     self.context.add_message("tool", result_str, tool_call_id=tc.get("id", ""))
                     tool_log.append(f"[{func_name}] {result_str[:400]}")
@@ -858,8 +864,9 @@ class CodingAgent:
                     error_msg = f"Tool {func_name} failed: {e}"
                     logger.error(error_msg)
                     messages.append({
-                        "role": "user",
+                        "role": "tool",
                         "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                        "tool_call_id": tc.get("id", ""),
                     })
                     tool_log.append(f"[{func_name}] FAILED: {e}")
 
@@ -892,17 +899,49 @@ class CodingAgent:
         todos = await self.rlm.decompose_task(task, session_id)
         logger.info("Decomposed into %d todos", len(todos))
 
+        # Build tool schemas so the LLM knows what tools are available
+        try:
+            tools = await self.mcp.list_tools()
+            tool_schemas = []
+            tool_defs = []
+            ref_tools = []
+            for tool in tools:
+                if "input_schema" in tool:
+                    tool_schemas.append({
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "description": tool["description"],
+                            "parameters": tool["input_schema"],
+                        },
+                    })
+                    if tool["name"].startswith(("workspace.", "wiki.")):
+                        params = tool["input_schema"].get("properties", {})
+                        param_str = " ".join(f"<{n}>" for n in params.keys())
+                        if param_str:
+                            param_str = " " + param_str
+                        tool_defs.append(
+                            f"- **{tool['name']}**: {tool['description']}{param_str}"
+                        )
+                        ref_tools.append(tool)
+
+            tool_ref = self._build_tool_reference(ref_tools)
+            rlm_system = self.system_prompt.replace("{TOOL_DEFINITIONS}", "\n".join(tool_defs))
+            rlm_system += f"\n\n## Detailed Tool Reference\n\n{tool_ref}"
+        except Exception as e:
+            logger.warning("Failed to list tools for RLM: %s", e)
+            rlm_system = getattr(self, 'system_prompt', "")
+
         responses = []
-        system_prompt = getattr(self, 'system_prompt', "")
 
         for i, todo in enumerate(todos):
             logger.info("RLM turn %d/%d: %s", i + 1, len(todos), todo.description[:80])
             for _ in range(config.rlm.max_turns_per_todo):
                 user_msg = f"Continue working on: {todo.description}"
-                content, turn_stats = await self.rlm.run_turn(
+                content, _, turn_stats, _ = await self.rlm.run_turn(
                     user_input=user_msg,
                     session_id=session_id,
-                    system_prompt=system_prompt,
+                    system_prompt=rlm_system,
                 )
                 self.session_state.record_tokens(
                     turn_stats.prompt_tokens,
@@ -1045,10 +1084,18 @@ class CodingAgent:
         wiki_context = self.context.get_relevant_context(user_input, max_tokens=config.agent.max_context_tokens)
         if wiki_context:
             messages.append({"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
+            logger.info("Injected wiki context: %d chars, ~%d tokens",
+                       len(wiki_context), len(wiki_context) // 4)
+        else:
+            logger.info("No wiki context available for query")
 
         kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
         if kb_window:
             messages.append({"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
+            logger.info("Injected knowledge window: %d chars, ~%d tokens",
+                       len(kb_window), len(kb_window) // 4)
+        else:
+            logger.info("Knowledge window empty, skipping injection")
 
         # Phase 3: Context stitching from previous sessions
         if self.session_id and config.phase3.session.score_threshold is not None:
@@ -1060,7 +1107,11 @@ class CodingAgent:
             )
             if session_context:
                 messages.append({"role": "system", "content": session_context})
-                logger.info("Injected session context (stitched from previous sessions)")
+                logger.info("Injected session context: %d chars, ~%d tokens",
+                           len(session_context), len(session_context) // 4)
+            else:
+                logger.info("No session context available (score_threshold=%.2f)",
+                           config.phase3.session.score_threshold)
 
         messages.append({"role": "user", "content": user_input})
         tool_log, thinking_log = [], []
@@ -1143,10 +1194,15 @@ class CodingAgent:
                 logger.info("Executing: %s(%s)", func_name, func_args)
                 try:
                     result = await self.execute_tool_with_protection(func_name, func_args)
+                    # Inject error feedback so the LLM can self-correct
+                    if not result.get("success") and func_name == "wiki.lookup":
+                        available = self.wiki.get_all_tool_names() + self.wiki.get_all_guide_names()
+                        result["suggestion"] = f"Available topics: {', '.join(available)}"
                     result_str = json.dumps(result)
                     messages.append({
-                        "role": "user",
+                        "role": "tool",
                         "content": f"Result of {func_name}: {result_str}\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                        "tool_call_id": tc.get("id", ""),
                     })
                     self.context.add_message("tool", result_str, tool_call_id=tc.get("id", ""))
                     tool_log.append(f"[{func_name}] {result_str[:400]}")
@@ -1154,7 +1210,7 @@ class CodingAgent:
                     error_msg = f"Tool {func_name} failed: {e}"
                     logger.error(error_msg)
                     messages.append({
-                        "role": "user",
+                        "role": "tool",
                         "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
                         "tool_call_id": tc.get("id", ""),
                     })
@@ -1269,10 +1325,4 @@ __all__ = [
     'PLAN_MODE',
     'BUILD_MODE',
     'EXPLORE_MODE',
-    'switch_mode',
-    'execute_tool_with_protection',
-    '_requires_authorization',
-    '_confirm_change',
-    '_record_change',
-    'explore',
 ]
