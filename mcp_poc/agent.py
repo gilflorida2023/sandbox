@@ -232,7 +232,7 @@ class CodingAgent:
         )
 
         # Initialize Phase 3 components
-        self.session_state = SessionState.resume(config.workspace.path, 
+        self.session_state = SessionState.resume(config.phase3.session.storage_path or f"{config.workspace.path}/.session_state",
                                                  session_id if session_id else str(int(time.time())))
         self.session_summarizer = ConversationSummarizer(
             ollama_client=self.ollama,
@@ -771,6 +771,27 @@ class CodingAgent:
                 else:
                     logger.info("No session context available (score_threshold=%.2f)",
                                config.phase3.session.score_threshold)
+
+            # Inject session history for conversational continuity
+            session_dict = self.session_state.as_dict()
+            task_history = session_dict.get("task_history", [])
+            recent_messages = session_dict.get("messages", [])
+            if task_history or recent_messages:
+                history_parts = []
+                if task_history:
+                    history_parts.append("### Previous Tasks:")
+                    for t in task_history[-5:]:
+                        history_parts.append(f"- {t.get('task', 'unknown')[:100]}")
+                if recent_messages:
+                    history_parts.append("### Recent Conversation:")
+                    for m in recent_messages[-6:]:
+                        role = m.get("role", "unknown")
+                        content = m.get("content", "")[:150]
+                        history_parts.append(f"- {role}: {content}")
+                if history_parts:
+                    session_history = "\n".join(history_parts)
+                    messages.insert(1, {"role": "system", "content": f"## Session History\n\n{session_history}"})
+                    logger.info("Injected session history: %d chars", len(session_history))
 
             if self.session_id:
                 ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
