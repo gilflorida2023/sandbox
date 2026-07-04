@@ -130,6 +130,19 @@
         "required": ["query"]
       },
       "wiki_file": "tools/websearch.md"
+    },
+    {
+      "name": "workspace.git_clone",
+      "description": "Clone a git repository into the workspace",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "Git repository URL to clone"},
+          "path": {"type": "string", "description": "Optional subdirectory within workspace"}
+        },
+        "required": ["url"]
+      },
+      "wiki_file": "guides/git_cloning.md"
     }
   ],
     "guides": [

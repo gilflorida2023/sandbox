@@ -56,7 +56,13 @@ class SessionState:
             "task": task,
             "timestamp": time.time(),
         })
+        # Cap at 100 task history entries
+        if len(self._state.get("task_history", [])) > 100:
+            self._state["task_history"] = self._state["task_history"][-100:]
         self.save()
+
+    def set_active_task(self, task: str):
+        self.update_task(task)
 
     def add_context_fragment(self, fragment: Dict):
         self._state.setdefault("context_fragments", []).append({
@@ -110,12 +116,47 @@ class SessionState:
             "total_completion_tokens": 0,
             "total_turns": 0,
             "stats_snapshots": [],
+            "messages": [],
+            "tool_results": [],
         }
 
     def record_tokens(self, prompt: int, completion: int):
         self._state["total_prompt_tokens"] = self._state.get("total_prompt_tokens", 0) + prompt
         self._state["total_completion_tokens"] = self._state.get("total_completion_tokens", 0) + completion
         self._state["total_turns"] += 1
+        self.save()
+
+    def add_message(self, role: str, content: str, tool_calls=None, tool_call_id: str = None, timestamp_str: str = None):
+        msg = {
+            "role": role,
+            "content": content[:2000],
+            "timestamp": time.time(),
+        }
+        if timestamp_str:
+            msg["datetime"] = timestamp_str
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        if tool_call_id:
+            msg["tool_call_id"] = tool_call_id
+        messages = self._state.setdefault("messages", [])
+        messages.append(msg)
+        if len(messages) > 200:
+            self._state["messages"] = messages[-200:]
+        self.save()
+
+    def add_tool_result(self, name: str, arguments: dict, result: dict,
+                        success: bool, duration_ms: float = 0):
+        tool_results = self._state.setdefault("tool_results", [])
+        tool_results.append({
+            "name": name,
+            "arguments": arguments,
+            "result_summary": json.dumps(result)[:500],
+            "success": success,
+            "duration_ms": round(duration_ms, 1),
+            "timestamp": time.time(),
+        })
+        if len(tool_results) > 100:
+            self._state["tool_results"] = tool_results[-100:]
         self.save()
 
     def snapshot_stats(self, summary: dict):

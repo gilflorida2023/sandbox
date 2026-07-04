@@ -248,7 +248,17 @@ async def repl():
                     command_history.append(task)
                     readline.add_history(task)
 
-                content = await agent.run(task)
+                # Handle "proceed"/"continue"/"go" as task continuation
+                if task.lower() in ("proceed", "continue", "go"):
+                    active = agent.session_state.active_task
+                    if active:
+                        task = active
+                        print(f"[Continuing: {task}]")
+                    else:
+                        print("No active task to continue.")
+                        continue
+
+                content, messages = await agent.run(task)
                 print(content)
 
             except (EOFError, KeyboardInterrupt):

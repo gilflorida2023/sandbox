@@ -653,11 +653,14 @@ class CodingAgent:
             parts.append(final_content)
         return "\n".join(parts)
 
-    async def run(self, task: str) -> str:
-        logger.info(f"Starting task: {task}")
+    async def run(self, task: str, on_plan_ready=None) -> tuple:
+        logger.info("Starting task: %s (mode=%s)", task[:80], self.current_mode)
+
+        # Track active task for continuity
+        self.session_state.set_active_task(task)
 
         if config.rlm.enabled:
-            return await self._run_rlm(task)
+            return await self._run_rlm(task), None
 
         route = self.router.classify(task)
 
@@ -671,8 +674,8 @@ class CodingAgent:
             content = msg.get("content", "") or ""
             thinking = msg.get("thinking", "") or msg.get("reasoning_content", "")
             if thinking:
-                content = f"── Thinking ─────────────────────────────\n{thinking}\n\n── Response ────────────────────────────────\n{content}"
-            return content
+                content = "── Thinking ─────────────────────────────\n" + thinking + "\n\n── Response ────────────────────────────────\n" + content
+            return content, None
 
         # Tool route — Phase 1: Plan
         plan_msgs = [
@@ -682,13 +685,16 @@ class CodingAgent:
         plan_resp = await self.ollama.chat(plan_msgs, [])
         plan_msg = plan_resp.get("message", {})
         plan = self._strip_plan_json(plan_msg.get("content", "") or "")
+        # Fallback: if stripping removed everything, use raw plan
+        if not plan.strip():
+            plan = plan_msg.get("content", "") or ""
 
         # Phase 2: Execute
         try:
             tools = await self.mcp.list_tools()
         except Exception as e:
             logger.error("Failed to list MCP tools: %s", e)
-            return f"MCP tools server is not running on port 8080.\n\n{plan}"
+            return f"MCP tools server is not running on port 8080.\n\n{plan}", messages
         tool_schemas = []
         tool_defs = []
         ref_tools = []
@@ -765,10 +771,15 @@ class CodingAgent:
                 logger.info("Context blob not found at %s", blob_file)
 
         messages.append({"role": "user", "content": task})
+        self.session_state.add_message("user", task, timestamp_str=datetime.datetime.now().isoformat())
         tool_log, thinking_log = [], []
 
+        # Signal that the plan is ready — REPL can show it
+        if on_plan_ready and self.current_mode == PLAN_MODE:
+            on_plan_ready(plan)
+
         for turn in range(config.agent.max_turns):
-            logger.info(f"Turn {turn + 1}/{config.agent.max_turns}")
+            logger.info("Turn %d/%d", turn + 1, config.agent.max_turns)
 
             try:
                 response = await self.ollama.chat(messages, tool_schemas)
@@ -777,8 +788,8 @@ class CodingAgent:
                     response.get("eval_count", 0),
                 )
             except Exception as e:
-                logger.error(f"Ollama error: {e}")
-                return f"Error communicating with Ollama: {e}"
+                logger.error("Ollama error: %s", e)
+                return "Error communicating with Ollama: " + str(e), messages
 
             done_reason = response.get("done_reason", "")
             if done_reason == "length":
@@ -830,7 +841,7 @@ class CodingAgent:
                     messages.append({"role": "user", "content": "Use the workspace tools to complete your plan step by step. Call one tool at a time."})
                     continue
                 logger.info("No tool calls - task complete")
-                return self._format_output(plan, tool_log, content)
+                return self._format_output(plan, tool_log, content), messages
 
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
@@ -887,11 +898,11 @@ class CodingAgent:
                 if not content and thinking:
                     content = thinking
                 if content:
-                    return self._format_output(plan, tool_log, content, thinking_log)
+                    return self._format_output(plan, tool_log, content, thinking_log), messages
             except Exception as e:
-                logger.error(f"Final turn error: {e}")
+                logger.error("Final turn error: %s", e)
 
-        return "Max turns reached without completion"
+        return "Max turns reached without completion", messages
 
     async def _run_rlm(self, task: str) -> str:
         logger.info("Running in RLM mode")

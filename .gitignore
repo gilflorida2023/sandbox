@@ -13,6 +13,7 @@ workspace/
 # Python cache
 __pycache__/
 *.pyc
+venv/
 
 # Go compiled binaries (built from main.go, named after parent dir)
 services/ollama_client/ollama_client
