@@ -248,8 +248,9 @@ async def repl():
                     command_history.append(task)
                     readline.add_history(task)
 
-                # Handle "continue" as task continuation (single keyword)
-                if task.lower() == "continue":
+                # Handle task continuation (single keyword: "continue")
+                # Also accept "proceed", "go", etc. as aliases
+                if task.lower() in ("continue", "proceed", "go", "let her rip"):
                     active = agent.session_state.active_task
                     if active:
                         task = active
