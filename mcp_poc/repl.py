@@ -253,12 +253,14 @@ async def repl():
                     active = agent.session_state.active_task
                     if active:
                         task = active
-                        print(f"[Continuing: {task}]")
+                        # Clear active_task so it doesn't restart the task
+                        agent.session_state.active_task = None
+                        print(f"[Continuing: {task[:80]}...]")
                     else:
                         print("No active task to continue.")
                         continue
 
-                content, messages = await agent.run(task)
+                content, messages = await agent.run(task, messages=messages)
                 print(content)
 
             except (EOFError, KeyboardInterrupt):

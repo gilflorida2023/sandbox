@@ -264,6 +264,8 @@ class CodingAgent:
         self.current_mode = PLAN_MODE
         self.change_log = []
         self.mode_switch_count = 0
+        self.protection_cache = {}
+        self.pending_changes = []
 
         # Knowledge ingestion on startup is disabled by default.
         # Past session logs can contain task-specific noise (e.g. prime sieve code)
@@ -656,7 +658,7 @@ class CodingAgent:
             parts.append(final_content)
         return "\n".join(parts)
 
-    async def run(self, task: str, on_plan_ready=None) -> tuple:
+    async def run(self, task: str, on_plan_ready=None, messages: list = None) -> tuple:
         logger.info("Starting task: %s (mode=%s)", task[:80], self.current_mode)
 
         # Track active task for continuity
@@ -722,10 +724,15 @@ class CodingAgent:
         tool_ref = self._build_tool_reference(ref_tools)
         system_prompt = self.system_prompt.replace("{TOOL_DEFINITIONS}", "\n".join(tool_defs))
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
-        ]
+        # Use provided messages or start fresh
+        if messages is None:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
+            ]
+        else:
+            # Preserve existing messages and add tool reference
+            messages.append({"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"})
 
         if plan:
             messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
@@ -870,7 +877,7 @@ class CodingAgent:
                             "content": f"BLOCKED: {mode_error}\n\nYou are in PLAN mode. You cannot execute this tool. Please stop attempting to execute tools that require BUILD mode.",
                             "tool_call_id": tc.get("id", ""),
                         })
-                        tool_log.append(f"[{func_name}] BLOCKED: {mode_error}")
+                        tool_log.append(f"[⊘ {func_name}] BLOCKED: {mode_error}")
                         # Return plan-only output without retrying
                         return self._format_output(plan, tool_log, f"Plan generated. {mode_error}"), messages
 
@@ -886,7 +893,9 @@ class CodingAgent:
                         "tool_call_id": tc.get("id", ""),
                     })
                     self.context.add_message("tool", result_str, tool_call_id=tc.get("id", ""))
-                    tool_log.append(f"[{func_name}] {result_str[:400]}")
+                    # Show clear feedback
+                    status = "✓" if result.get("success") else "✗"
+                    tool_log.append(f"[{status} {func_name}] {result_str[:400]}")
                 except Exception as e:
                     error_msg = f"Tool {func_name} failed: {e}"
                     logger.error(error_msg)
@@ -895,7 +904,7 @@ class CodingAgent:
                         "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
                         "tool_call_id": tc.get("id", ""),
                     })
-                    tool_log.append(f"[{func_name}] FAILED: {e}")
+                    tool_log.append(f"[✗ {func_name}] FAILED: {e}")
 
         if tool_calls:
             logger.info("Running final summary turn")

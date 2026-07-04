@@ -20,6 +20,8 @@ RULES:
 - Follow the user's instructions exactly (language, framework, etc.)
 - If no tools needed, output: "Direct response - no tools required"
 - Output only the plan, no extra text before or after
+- Keep plans minimal - only include steps that directly execute the user's request
+- Do NOT add verification, output, or test steps unless explicitly requested
 
 EXAMPLES:
 
