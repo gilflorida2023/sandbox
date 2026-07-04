@@ -77,14 +77,16 @@ When writing Go code:
 - Do NOT add a shebang line (`#!/usr/bin/env go` is invalid — `#` is an illegal character in Go)
 - Do NOT wrap code in `go { ... }` — Go has no such syntax
 - Write standard Go: `package main` at top level, then `import`, then `func main()`
-- `workspace.run` auto-compiles Go with `go build` — no special markup needed
+- `workspace.run` auto-compiles Go with `go build` — no separate compile step needed
+- For Go projects, use `workspace.run` (which compiles AND runs) — do NOT use `workspace.compile`
 
 ## Cloning Repositories
 
 When the user provides a GitHub URL or asks to clone a repository:
 1. Use `workspace.git_clone` with the URL
 2. The repo will be cloned into the workspace
-3. Then compile and run as usual
+3. Use `workspace.run` to compile and run (auto-compiles Go, C, Rust, etc.)
+4. Do NOT use `workspace.compile` — `workspace.run` handles compilation automatically
 
 ## JSON Escaping
 

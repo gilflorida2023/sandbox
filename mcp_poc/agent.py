@@ -730,53 +730,56 @@ class CodingAgent:
                 {"role": "system", "content": system_prompt},
                 {"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"},
             ]
+            if plan:
+                messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
         else:
-            # Preserve existing messages and add tool reference
-            messages.append({"role": "system", "content": f"## Detailed Tool Reference\n\n{tool_ref}"})
+            # Continuation: preserve existing messages, just add the new task
+            pass
 
-        if plan:
-            messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
+        if not messages or messages[0].get("content", "") != system_prompt:
+            # Only inject contexts on fresh start, not continuation
+            if plan:
+                messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
 
-        wiki_context = self.context.get_relevant_context(task, max_tokens=config.agent.max_context_tokens)
-        if wiki_context:
-            messages.insert(1, {"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
-            logger.info("Injected wiki context: %d chars, ~%d tokens",
-                       len(wiki_context), len(wiki_context) // 4)
-        else:
-            logger.info("No wiki context available for query")
-
-        kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
-        if kb_window:
-            messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
-            logger.info("Injected knowledge window: %d chars, ~%d tokens",
-                       len(kb_window), len(kb_window) // 4)
-        else:
-            logger.info("Knowledge window empty, skipping injection")
-
-        # Phase 3: Context stitching from previous sessions
-        if self.session_id and config.phase3.session.score_threshold is not None:
-            # Add session context stitching
-            session_context = self.context_stitcher.get_session_context(
-                user_query=task,
-                max_tokens=config.agent.context.session_tokens,
-                score_threshold=config.phase3.session.score_threshold
-            )
-            if session_context:
-                messages.insert(1, {"role": "system", "content": session_context})
-                logger.info("Injected session context: %d chars, ~%d tokens",
-                           len(session_context), len(session_context) // 4)
+            wiki_context = self.context.get_relevant_context(task, max_tokens=config.agent.max_context_tokens)
+            if wiki_context:
+                messages.insert(1, {"role": "system", "content": f"## Reference Documentation\n\n{wiki_context}"})
+                logger.info("Injected wiki context: %d chars, ~%d tokens",
+                           len(wiki_context), len(wiki_context) // 4)
             else:
-                logger.info("No session context available (score_threshold=%.2f)",
-                           config.phase3.session.score_threshold)
+                logger.info("No wiki context available for query")
 
-        if self.session_id:
-            ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
-            blob_file = ctx_path / self.session_id / "context-blob.md"
-            if blob_file.exists():
-                blob = blob_file.read_text()
-                messages.insert(1, {"role": "system", "content": f"## Codebase Context\n\n{blob}"})
-                logger.info("Injected context blob: %d chars, ~%d tokens",
-                           len(blob), len(blob) // 4)
+            kb_window = self.context.get_knowledge_window(max_tokens=config.agent.max_context_tokens // 2)
+            if kb_window:
+                messages.insert(1, {"role": "system", "content": f"## Accumulated Knowledge\n\n{kb_window}"})
+                logger.info("Injected knowledge window: %d chars, ~%d tokens",
+                           len(kb_window), len(kb_window) // 4)
+            else:
+                logger.info("Knowledge window empty, skipping injection")
+
+            # Phase 3: Context stitching from previous sessions
+            if self.session_id and config.phase3.session.score_threshold is not None:
+                session_context = self.context_stitcher.get_session_context(
+                    user_query=task,
+                    max_tokens=config.agent.context.session_tokens,
+                    score_threshold=config.phase3.session.score_threshold
+                )
+                if session_context:
+                    messages.insert(1, {"role": "system", "content": session_context})
+                    logger.info("Injected session context: %d chars, ~%d tokens",
+                               len(session_context), len(session_context) // 4)
+                else:
+                    logger.info("No session context available (score_threshold=%.2f)",
+                               config.phase3.session.score_threshold)
+
+            if self.session_id:
+                ctx_path = Path(config.context.path) if hasattr(config, 'context') and config.context.path else Path(config.workspace.path) / ".context"
+                blob_file = ctx_path / self.session_id / "context-blob.md"
+                if blob_file.exists():
+                    blob = blob_file.read_text()
+                    messages.insert(1, {"role": "system", "content": f"## Codebase Context\n\n{blob}"})
+                    logger.info("Injected context blob: %d chars, ~%d tokens",
+                               len(blob), len(blob) // 4)
             else:
                 logger.info("Context blob not found at %s", blob_file)
 

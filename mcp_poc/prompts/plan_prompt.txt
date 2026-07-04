@@ -34,11 +34,7 @@ User asks: "Clone repo and compile Go binary"
 - Tool: workspace.git_clone
 - Purpose: Get the Go source code from GitHub
 
-### Step 2: Build the Go binary
-- Tool: workspace.compile
-- Purpose: Compile simplesieve.go to executable
-
-### Step 3: Run the compiled binary
+### Step 2: Build and run the Go binary
 - Tool: workspace.run
 - Purpose: Execute simplesieve with -c -limit 1e6
 
