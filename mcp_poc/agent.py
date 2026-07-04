@@ -578,9 +578,10 @@ class CodingAgent:
                         self._fix_file_escaping(filepath)
                 elif func_name == "workspace.run" and self.current_mode == BUILD_MODE:
                     # In BUILD mode, ensure display_output is enabled for workspace.run
-                    if isinstance(func_args, dict):
-                        func_args["display_output"] = True
-                    result = await self.mcp.call_tool(func_name, func_args)
+                    # Copy args to avoid mutating the original dict
+                    run_args = dict(func_args)
+                    run_args["display_output"] = True
+                    result = await self.mcp.call_tool(func_name, run_args)
                 else:
                     result = await self.mcp.call_tool(func_name, func_args)
                 
@@ -991,22 +992,22 @@ class CodingAgent:
                             next_hint = "\n\nBuild failed. Check the error and fix the issue, then call workspace.build again."
                     elif func_name == "workspace.run":
                         if result.get("success"):
-                            # In BUILD mode, force display_output to show execution results
-                            if self.current_mode == BUILD_MODE:
-                                # Need to modify the original arguments to include display_output
-                                # First, check if we can modify func_args
-                                if isinstance(func_args, dict):
-                                    func_args["display_output"] = True
-                                    # Log this for debugging
-                                    logger.info("BUILD mode: Auto-enabling display_output for workspace.run")
                             next_hint = "\n\nAll steps complete."
+                            # Surface stderr (display_output) in the tool result
+                            if result.get("stderr"):
+                                next_hint += f"\n\nExecution output:\n{result['stderr']}"
                         else:
                             # Check if build was ever called
                             build_called = any("workspace.build" in entry for entry in tool_log)
                             if not build_called:
                                 next_hint = "\n\nSTOP! workspace.build has NOT been called yet. You MUST call workspace.build with path='repos/simplesieve' FIRST to compile the Go binary. Do NOT call workspace.run again until workspace.build succeeds."
                             else:
-                                next_hint = "\n\nworkspace.run failed. Check the error."
+                                # Include stderr in the error feedback so the model can troubleshoot
+                                stderr_detail = result.get("stderr", "")
+                                if stderr_detail:
+                                    next_hint = f"\n\nworkspace.run failed. Error: {result.get('error', 'unknown')}\nStderr output:\n{stderr_detail}\n\nReview the stderr output above and fix the issue, then call workspace.run again."
+                                else:
+                                    next_hint = f"\n\nworkspace.run failed. Error: {result.get('error', 'unknown')}. Review the error and fix the issue."
                     
                     messages.append({
                         "role": "tool",
@@ -1034,11 +1035,18 @@ class CodingAgent:
                                     "tool_call_id": "",
                                 })
                 except Exception as e:
-                    error_msg = f"Tool {func_name} failed: {e}"
-                    logger.error(error_msg)
+                    logger.error(f"Tool {func_name} failed: {e}")
+                    error_result = {
+                        "success": False,
+                        "error": str(e),
+                    }
+                    result_str = json.dumps(error_result)
+                    # Include stderr from the failed call (e.g. display_output) in the feedback
+                    if hasattr(e, '__cause__') and e.__cause__:
+                        result_str += f"\nCaused by: {e.__cause__}"
                     messages.append({
                         "role": "tool",
-                        "content": f"Result of {func_name}: " + json.dumps({"success": False, "error": str(e)}) + "\n\nIf the task is not complete, output your next tool call as a JSON code block.",
+                        "content": f"Result of {func_name}: {result_str}\n\nACTION REQUIRED: The tool call failed. Error details above. If the error is recurring, adjust the arguments or check that the target file/command exists and is executable.",
                         "tool_call_id": tc.get("id", ""),
                     })
                     tool_log.append(f"[✗ {func_name}] FAILED: {e}")

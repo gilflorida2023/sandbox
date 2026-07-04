@@ -38,21 +38,21 @@ def main():
         )
         
         if display_output:
-            print(f"Executing: [binary] {path}")
+            sys.stderr.write(f"Executing: [binary] {path}\n")
             if cmd_args:
-                print(f"Args: {cmd_args}")
-            print(f"Timeout: {timeout}s")
-            print("-" * 80)
+                sys.stderr.write(f"Args: {cmd_args}\n")
+            sys.stderr.write(f"Timeout: {timeout}s\n")
+            sys.stderr.write("-" * 80 + "\n")
             if result.stdout:
-                print("STDOUT:")
-                print(result.stdout)
-                print("-" * 80)
+                sys.stderr.write("STDOUT:\n")
+                sys.stderr.write(result.stdout)
+                sys.stderr.write("-" * 80 + "\n")
             if result.stderr:
-                print("STDERR:")
-                print(result.stderr)
-                print("-" * 80)
-            print(f"Exit Code: {result.returncode}")
-            print("-" * 80)
+                sys.stderr.write("STDERR:\n")
+                sys.stderr.write(result.stderr)
+                sys.stderr.write("-" * 80 + "\n")
+            sys.stderr.write(f"Exit Code: {result.returncode}\n")
+            sys.stderr.write("-" * 80 + "\n")
         
         print(json.dumps({
             'success': result.returncode == 0,
@@ -64,22 +64,22 @@ def main():
     except subprocess.TimeoutExpired:
         error_msg = f'Execution timed out after {timeout}s'
         if display_output:
-            print(f"ERROR: {error_msg}")
-            print("-" * 80)
+            sys.stderr.write(f"ERROR: {error_msg}\n")
+            sys.stderr.write("-" * 80 + "\n")
         print(json.dumps({'success': False, 'error': error_msg}))
         sys.exit(1)
     except FileNotFoundError:
         error_msg = f'File not found or not executable: {path}'
         if display_output:
-            print(f"ERROR: {error_msg}")
-            print("-" * 80)
+            sys.stderr.write(f"ERROR: {error_msg}\n")
+            sys.stderr.write("-" * 80 + "\n")
         print(json.dumps({'success': False, 'error': error_msg}))
         sys.exit(1)
     except Exception as e:
         error_msg = str(e)
         if display_output:
-            print(f"ERROR: {error_msg}")
-            print("-" * 80)
+            sys.stderr.write(f"ERROR: {error_msg}\n")
+            sys.stderr.write("-" * 80 + "\n")
         print(json.dumps({'success': False, 'error': error_msg}))
         sys.exit(1)
 

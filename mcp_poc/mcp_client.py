@@ -15,10 +15,21 @@ async def _run_cgi(script: str, payload: dict) -> dict:
         stderr=subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate(json.dumps(payload).encode())
+    stderr_text = stderr.decode().strip()
     if proc.returncode != 0:
-        msg = stderr.decode().strip() or f"CGI script failed (exit {proc.returncode})"
-        return {"success": False, "error": msg}
-    return json.loads(stdout.decode())
+        msg = stderr_text or f"CGI script failed (exit {proc.returncode})"
+        return {"success": False, "error": msg, "stderr": stderr_text}
+    try:
+        result = json.loads(stdout.decode())
+        result["stderr"] = stderr_text
+        return result
+    except json.JSONDecodeError as e:
+        return {
+            "success": False,
+            "error": f"Invalid JSON from tool: {e}",
+            "raw_stdout": stdout.decode()[:2000],
+            "stderr": stderr_text,
+        }
 
 
 class MCPClient:
