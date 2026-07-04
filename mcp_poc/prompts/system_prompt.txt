@@ -83,10 +83,18 @@ When writing Go code:
 ## Cloning Repositories
 
 When the user provides a GitHub URL or asks to clone a repository:
-1. Use `workspace.git_clone` with the URL
-2. The repo will be cloned into the workspace
-3. Use `workspace.run` to compile and run (auto-compiles Go, C, Rust, etc.)
-4. Do NOT use `workspace.compile` — `workspace.run` handles compilation automatically
+1. Use `workspace.git_clone` with the URL and a **required path** under `repos/`
+2. Example: `{"name": "workspace.git_clone", "arguments": {"url": "https://github.com/user/repo.git", "path": "repos/repo"}}`
+3. Use `workspace.build` to compile the project
+4. Use `workspace.run` to execute the compiled binary
+5. Do NOT use `workspace.compile` for multi-file projects — use `workspace.build` instead
+
+## Build Tool
+
+Use `workspace.build` for project builds (Go, C, Rust, Make, etc.):
+- `workspace.build` auto-detects build system (go.mod, Makefile, Cargo.toml)
+- Returns the path to the built binary for use with `workspace.run`
+- For single-file projects, `workspace.run` auto-compiles — no build step needed
 
 ## JSON Escaping
 
