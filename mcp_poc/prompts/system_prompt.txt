@@ -64,9 +64,10 @@ When a tool returns an error with a `suggestion` field, READ the suggestion and 
 ## Task Approach
 
 When given a task that requires tools, TAKE ACTION immediately:
-1. Write the source file with `workspace.write`
-2. Run with `workspace.run` (auto-compiles if needed)
-3. Verify the output
+1. If the task involves an existing repository, use `workspace.git_clone` first
+2. If writing new code, use `workspace.write` to create the source file
+3. Run with `workspace.run` (auto-compiles if needed)
+4. Verify the output
 
 **CRITICAL**: The task is NOT complete until you have run and verified. Keep making tool calls until done.
 
@@ -77,6 +78,13 @@ When writing Go code:
 - Do NOT wrap code in `go { ... }` — Go has no such syntax
 - Write standard Go: `package main` at top level, then `import`, then `func main()`
 - `workspace.run` auto-compiles Go with `go build` — no special markup needed
+
+## Cloning Repositories
+
+When the user provides a GitHub URL or asks to clone a repository:
+1. Use `workspace.git_clone` with the URL
+2. The repo will be cloned into the workspace
+3. Then compile and run as usual
 
 ## JSON Escaping
 

@@ -22,6 +22,7 @@ RULES:
 - Output only the plan, no extra text before or after
 - Keep plans minimal - only include steps that directly execute the user's request
 - Do NOT add verification, output, or test steps unless explicitly requested
+- If the user provides a URL or asks to clone, use workspace.git_clone as the first step
 
 EXAMPLES:
 
