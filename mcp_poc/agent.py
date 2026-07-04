@@ -13,6 +13,7 @@ import json
 import logging
 import hashlib
 import time
+import datetime
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -262,6 +263,7 @@ class CodingAgent:
         # Initialize dual-mode system
         self.current_mode = PLAN_MODE
         self.change_log = []
+        self.mode_switch_count = 0
 
         # Knowledge ingestion on startup is disabled by default.
         # Past session logs can contain task-specific noise (e.g. prime sieve code)
@@ -592,6 +594,7 @@ class CodingAgent:
         """Record a change for audit purposes."""
         if not hasattr(self, 'change_log'):
             self.change_log = []
+            self.change_log = []
         
         change_record = {
             "timestamp": time.time(),
@@ -858,6 +861,19 @@ class CodingAgent:
 
                 try:
                     result = await self.execute_tool_with_protection(func_name, func_args)
+
+                    # Break on mode restriction - don't retry these tools
+                    if result.get("mode_restriction"):
+                        mode_error = result.get("error", "Requires different mode")
+                        messages.append({
+                            "role": "tool",
+                            "content": f"BLOCKED: {mode_error}\n\nYou are in PLAN mode. You cannot execute this tool. Please stop attempting to execute tools that require BUILD mode.",
+                            "tool_call_id": tc.get("id", ""),
+                        })
+                        tool_log.append(f"[{func_name}] BLOCKED: {mode_error}")
+                        # Return plan-only output without retrying
+                        return self._format_output(plan, tool_log, f"Plan generated. {mode_error}"), messages
+
                     # Inject error feedback so the LLM can self-correct
                     if not result.get("success") and func_name == "wiki.lookup":
                         available = self.wiki.get_all_tool_names() + self.wiki.get_all_guide_names()

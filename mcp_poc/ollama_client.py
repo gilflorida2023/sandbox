@@ -108,9 +108,9 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": config.agent.temperature,
-                "num_ctx": 262144,
-                "think": False
-            }
+                "num_ctx": 262144
+            },
+            "think": False
         }
 
         if tools and self.supports_tools_cache:
