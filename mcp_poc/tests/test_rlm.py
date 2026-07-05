@@ -36,12 +36,12 @@ class TestSimpleRLM:
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM.__new__(SimpleRLM)
         prompt = rlm._load_system_prompt()
-        assert "Recursive Language Model" in prompt
+        assert "RLM controller" in prompt
         assert "call_tool" in prompt
         assert "llm_query" in prompt
         assert "FINAL" in prompt
         assert "workspace.git_clone" in prompt
-        assert "tool fails" in prompt
+        assert "workspace.run" in prompt
 
     def test_extract_code_from_markdown(self):
         mock_ollama = make_mock_ollama()

@@ -237,8 +237,11 @@ async def repl():
 
                 elif raw_input == "/rlm":
                     agent.rlm_mode = not agent.rlm_mode
+                    if agent.rlm_mode and agent.current_mode == "PLAN":
+                        agent.current_mode = "BUILD"
                     rlm_str = "ON" if agent.rlm_mode else "OFF"
                     print(f"\nRLM mode: {rlm_str}")
+                    print(f"  Mode: {agent.current_mode}")
                     print("  ON:  Root LLM writes Python code executed in REPL sandbox")
                     print("  OFF: Standard tool-calling agent loop")
                     continue
