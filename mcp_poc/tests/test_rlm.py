@@ -1,6 +1,7 @@
 """Tests for the RLM module (SimpleRLM class)."""
 
 import asyncio
+import httpx
 import sys
 import json
 sys.path.insert(0, "mcp_poc")
@@ -19,6 +20,29 @@ def make_mock_ollama():
         "message": {"content": ""}
     })
     return mock
+
+
+def make_mock_llm_client(responses):
+    """Create a mock httpx client that returns given responses.
+
+    responses: list of strings, each becomes the content returned by one
+               completion() call to the mock LLM.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    client = AsyncMock()
+    reply_iter = iter(responses)
+
+    async def mock_post(url, **kwargs):
+        content = next(reply_iter)
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = MagicMock(return_value={
+            "message": {"content": content}
+        })
+        return resp
+
+    client.post = mock_post
+    return client
 
 
 class TestSimpleRLM:
@@ -212,44 +236,41 @@ class TestSimpleRLM:
     def test_completion_loop_final_answer(self):
         """Full RLM loop: root LLM generates code that sets final_answer."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(return_value={
-            "message": {"content": 'final_answer = "42"'}
-        })
         rlm = SimpleRLM(mock_ollama)
+        rlm._llm_client = make_mock_llm_client(['final_answer = "42"'])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("what is the answer", ""))
         assert result == "42"
-        assert mock_ollama.chat.call_count == 1
 
     def test_completion_loop_final_function(self):
         """Full RLM loop: root LLM generates code calling FINAL()."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(return_value={
-            "message": {"content": 'FINAL("done")'}
-        })
         rlm = SimpleRLM(mock_ollama)
+        rlm._llm_client = make_mock_llm_client(['FINAL("done")'])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("finish", ""))
         assert result == "done"
-        assert mock_ollama.chat.call_count == 1
 
     def test_completion_loop_max_iters(self):
         """Full RLM loop: reaches max iterations without final_answer."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(return_value={
-            "message": {"content": "print('still working')"}
-        })
         rlm = SimpleRLM(mock_ollama)
+        rlm._llm_client = make_mock_llm_client([
+            "print('still working')",
+            "print('still working')",
+            "print('still working')",
+        ])
         rlm.max_iters = 3
         result = asyncio.run(rlm.completion("keep going", ""))
         assert "Max iterations" in result
-        assert mock_ollama.chat.call_count == 3
 
     def test_completion_loop_llm_error(self):
         """Full RLM loop: root LLM fails."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(side_effect=Exception("Ollama error"))
         rlm = SimpleRLM(mock_ollama)
+        client = AsyncMock()
+        client.post = AsyncMock(side_effect=httpx.HTTPError("Ollama error"))
+        rlm._llm_client = client
         rlm.max_iters = 3
         result = asyncio.run(rlm.completion("test", ""))
         assert "RLM Error" in result
@@ -257,10 +278,10 @@ class TestSimpleRLM:
     def test_completion_loop_code_extraction(self):
         """Verifies code is extracted from markdown blocks."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(return_value={
-            "message": {"content": "```python\nfinal_answer = 'from block'\n```"}
-        })
         rlm = SimpleRLM(mock_ollama)
+        rlm._llm_client = make_mock_llm_client([
+            "```python\nfinal_answer = 'from block'\n```"
+        ])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("test", ""))
         assert result == "from block"
@@ -268,12 +289,12 @@ class TestSimpleRLM:
     def test_completion_loop_storage_persists(self):
         """Verifies storage dict persists across iterations."""
         mock_ollama = make_mock_ollama()
-        mock_ollama.chat = AsyncMock(side_effect=[
-            {"message": {"content": "storage['count'] = 1\nprint('iter 1')"}},
-            {"message": {"content": "storage['count'] = storage.get('count', 0) + 1\nprint('iter 2')"}},
-            {"message": {"content": "final_answer = str(storage['count'])"}},
-        ])
         rlm = SimpleRLM(mock_ollama)
+        rlm._llm_client = make_mock_llm_client([
+            "storage['count'] = 1\nprint('iter 1')",
+            "storage['count'] = storage.get('count', 0) + 1\nprint('iter 2')",
+            "final_answer = str(storage['count'])",
+        ])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("count", ""))
         assert result == "2"

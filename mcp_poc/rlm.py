@@ -258,6 +258,9 @@ class SimpleRLM:
         # Available tools (fetched at startup)
         self._available_tools: List[str] = _fetch_available_tools()
 
+        # Persistent HTTP client for Root LLM calls (lazy init)
+        self._llm_client = None
+
         print(f"  RLM session: {self._session_id}")
         print(f"  Tool log: {TOOL_LOG_PATH}")
         print(f"  Available tools: {', '.join(self._available_tools)}")
@@ -568,11 +571,26 @@ class SimpleRLM:
             print(f"  ── Iteration {iteration} ──")
             raw_response = ""
             try:
-                response = await self.ollama.chat(messages, tools=None)
-                msg = response.get("message", {})
+                if self._llm_client is None:
+                    self._llm_client = httpx.AsyncClient(timeout=300)
+                resp = await self._llm_client.post(
+                    f"{self.base_url}/api/chat",
+                    json={
+                        "model": self.model_name,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": config.rlm.temperature,
+                            "num_ctx": config.rlm.num_ctx,
+                        },
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                msg = data.get("message", {})
                 raw_response = msg.get("content", "").strip()
-            except Exception as e:
-                logger.error("Root LLM call failed: %s", e)
+            except httpx.HTTPError as e:
+                logger.error("Root LLM HTTP call failed: %s", e)
                 return f"\n[RLM Error] Root LLM call failed at iteration {iteration}: {e}"
 
             code = self._extract_code(raw_response)
