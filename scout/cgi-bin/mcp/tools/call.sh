@@ -14,6 +14,7 @@ case "$TOOL_NAME" in
     workspace.list)     "$CGI_DIR/list.py" <<< "$ARGS" ;;
     workspace.delete)   "$CGI_DIR/delete.py" <<< "$ARGS" ;;
     workspace.compile)  "$CGI_DIR/compile.py" <<< "$ARGS" ;;
+    workspace.build)    "$CGI_DIR/build.py" <<< "$ARGS" ;;
     workspace.run)      "$CGI_DIR/run.py" <<< "$ARGS" ;;
     workspace.search)   "$CGI_DIR/search.py" <<< "$ARGS" ;;
     wiki.lookup)        "$CGI_DIR/wiki_lookup.py" <<< "$ARGS" ;;

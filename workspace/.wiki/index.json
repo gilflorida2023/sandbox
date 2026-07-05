@@ -65,6 +65,20 @@
       "wiki_file": "tools/run.md"
     },
     {
+      "name": "workspace.build",
+      "description": "Build/compile a project (runs make, go build, cargo build, gcc, etc.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Project root directory path (where Makefile/go.mod/Cargo.toml is)"},
+          "target": {"type": "string", "description": "Output binary name (optional)"},
+          "args": {"type": "array", "items": {"type": "string"}, "default": []}
+        },
+        "required": ["path"]
+      },
+      "wiki_file": "tools/build.md"
+    },
+    {
       "name": "workspace.compile",
       "description": "Compile source code (optional — workspace.run auto-compiles)",
       "parameters": {
@@ -138,9 +152,9 @@
         "type": "object",
         "properties": {
           "url": {"type": "string", "description": "Git repository URL to clone"},
-          "path": {"type": "string", "description": "Optional subdirectory within workspace"}
+          "path": {"type": "string", "description": "Required: subdirectory within workspace/repos/ to clone into"}
         },
-        "required": ["url"]
+        "required": ["url", "path"]
       },
       "wiki_file": "guides/git_cloning.md"
     }
