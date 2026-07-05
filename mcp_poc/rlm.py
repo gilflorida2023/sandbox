@@ -504,7 +504,8 @@ class SimpleRLM:
 
         # Pre-flight ping: verify Ollama is responsive before entering the loop
         if self._llm_client is None:
-            self._llm_client = httpx.AsyncClient(timeout=300)
+            self._llm_client = httpx.AsyncClient(timeout=config.ollama.timeout)
+        print("  (pinging Ollama — waiting for model to load...)")
         try:
             ping_resp = await self._llm_client.post(
                 f"{self.base_url}/api/chat",
@@ -514,7 +515,7 @@ class SimpleRLM:
                     "stream": False,
                     "options": {"num_ctx": 4096, "temperature": 0},
                 },
-                timeout=httpx.Timeout(15.0),
+                timeout=httpx.Timeout(120.0),
             )
             ping_resp.raise_for_status()
         except Exception as e:
