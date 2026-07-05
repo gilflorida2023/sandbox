@@ -48,6 +48,7 @@ async def repl():
         print(f"Model: {agent.ollama.model}")
         print("Type 'exit' or Ctrl-D to quit.")
         print("  /plan | /build  — switch modes")
+        print("  /rlm            — toggle RLM mode (Root LLM writes Python)")
         print("  /pending        — list knowledge chunks awaiting approval")
         print("  /approve <id>   — approve a pending chunk")
         print("  /reject <id>    — reject a pending chunk")
@@ -57,9 +58,11 @@ async def repl():
         print("  /summarize <n>  — generate conversation summary")
         print("  /correct <id> <feedback> — submit user correction")
         print("  /explore <problem> — start recursive exploration")
-        print("  /rlm status     — RLM todo list + progress")
+        print("  /rlm status     — old RLM todo list + progress")
         print("  /stats          — telemetry dashboard")
-        print(f"Current mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})\n")
+        mode_str = f"Mode: {agent.current_mode} (Read-only: {'Yes' if agent.current_mode == PLAN_MODE else 'No'})"
+        rlm_str = "RLM: ON" if agent.rlm_mode else "RLM: OFF"
+        print(f"  {mode_str} | {rlm_str}\n")
 
         command_history = []
         readline.set_history_length(500)
@@ -232,8 +235,17 @@ async def repl():
                     print(f"\n  Turns: {summary.total_turns}")
                     continue
 
+                elif raw_input == "/rlm":
+                    agent.rlm_mode = not agent.rlm_mode
+                    rlm_str = "ON" if agent.rlm_mode else "OFF"
+                    print(f"\nRLM mode: {rlm_str}")
+                    print("  ON:  Root LLM writes Python code executed in REPL sandbox")
+                    print("  OFF: Standard tool-calling agent loop")
+                    continue
+
                 elif raw_input.startswith("/rlm "):
-                    print("\nUsage: /rlm status")
+                    print("\nUsage: /rlm          — toggle RLM mode")
+                    print("       /rlm status   — old RLM todo list + progress")
                     continue
 
                 if raw_input.lower() in ("exit", "quit"):
@@ -260,7 +272,11 @@ async def repl():
                         print("No active task to continue.")
                         continue
 
-                content, messages = await agent.run(task, messages=messages)
+                if agent.rlm_mode:
+                    content = await agent.run_rlm(task)
+                    messages = None
+                else:
+                    content, messages = await agent.run(task, messages=messages)
                 print(content)
 
             except (EOFError, KeyboardInterrupt):
@@ -271,7 +287,8 @@ async def repl():
 
     finally:
         cleanup()
-        await agent.close()
+        if 'agent' in locals() and agent is not None:
+            await agent.close()
 
 
 if __name__ == "__main__":

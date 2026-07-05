@@ -92,12 +92,11 @@ class SolverConfig:
 
 @dataclass
 class RlmConfig:
-    enabled: bool = True
-    max_turns_per_todo: int = 5
-    require_completion_check: bool = True
-    auto_decompose: bool = True
-    persist_discoveries: bool = True
-    storage_path: str = ""
+    enabled: bool = False
+    max_iterations: int = 30
+    max_llm_calls: int = 50
+    temperature: float = 0.3
+    num_ctx: int = 32768
 
 @dataclass
 class Config:
@@ -154,10 +153,7 @@ class Config:
         if "solver" in data:
             config.solver = SolverConfig(**data["solver"])
         if "rlm" in data:
-            rlm_data = data["rlm"]
-            if "storage_path" not in rlm_data:
-                rlm_data["storage_path"] = os.path.join(config.workspace.path, ".todos")
-            config.rlm = RlmConfig(**rlm_data)
+            config.rlm = RlmConfig(**data["rlm"])
         return config
 
 config = Config.from_yaml("/home/scout/projects/sandbox/mcp_poc/config.yaml")

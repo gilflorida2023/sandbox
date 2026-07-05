@@ -253,7 +253,7 @@ class CodingAgent:
         )
         
         # Initialize RLM components
-        rlm_storage = config.rlm.storage_path or f"{config.workspace.path}/.todos"
+        rlm_storage = f"{config.workspace.path}/.todos"
         self.todo_list = TodoList(rlm_storage)
         self.stats_collector = StatsCollector()
         self.rlm = RlmOrchestrator(
@@ -300,6 +300,10 @@ class CodingAgent:
         self.mode_switch_count = 0
         self.protection_cache = {}
         self.pending_changes = []
+
+        # RLM mode toggle
+        self.rlm_mode = False
+        self.rlm_engine = None
 
         # Knowledge ingestion on startup is disabled by default.
         # Past session logs can contain task-specific noise (e.g. prime sieve code)
@@ -681,8 +685,10 @@ class CodingAgent:
         # Track active task for continuity
         self.session_state.set_active_task(task)
 
-        if config.rlm.enabled:
-            return await self._run_rlm(task), None
+        if self.rlm_mode or config.rlm.enabled:
+            context = self._build_rlm_context(task)
+            result = await self.run_rlm(task, context)
+            return result, None
 
         route = self.router.classify(task)
 
@@ -750,8 +756,12 @@ class CodingAgent:
             if plan:
                 messages.append({"role": "system", "content": f"## Plan\n{plan}\n\nExecute this plan using the workspace tools."})
         else:
-            # Continuation: preserve existing messages, just add the new task
-            pass
+            # Continuation: tell the LLM to resume work with tool calls
+            messages.append({"role": "user", "content": (
+                "Continue working on the task below. Do NOT summarize or conclude — "
+                "call the NEXT tool that makes progress.\n\n"
+                f"Task: {task}"
+            )})
 
         if not messages or messages[0].get("content", "") != system_prompt:
             # Only inject contexts on fresh start, not continuation
@@ -1151,6 +1161,64 @@ class CodingAgent:
         output.append("")
         output.extend(responses)
         return "\n".join(output)
+
+    def _build_rlm_context(self, task: str) -> str:
+        """Build a rich context string for the RLM from available stores."""
+        parts = [f"# Query\n{task}\n"]
+
+        # Wiki docs
+        try:
+            wiki_docs = self.wiki.search(task)
+            if wiki_docs:
+                parts.append("# Wiki Documentation\n")
+                for doc in wiki_docs[:5]:
+                    parts.append(f"## {doc.get('name', doc.get('title', 'doc'))}\n{doc.get('content', '')[:2000]}\n")
+        except Exception:
+            pass
+
+        # Knowledge window
+        try:
+            kb = self.context.get_knowledge_window(max_tokens=2000)
+            if kb:
+                parts.append(f"# Accumulated Knowledge\n{kb}\n")
+        except Exception:
+            pass
+
+        # Corrections
+        try:
+            corrections = self.correction_store.get_corrections(task)
+            if corrections:
+                parts.append("# User Corrections\n")
+                for c in corrections[:5]:
+                    parts.append(f"- Topic: {c.get('topic')} | Correct: {c.get('correct', '')[:200]}\n")
+        except Exception:
+            pass
+
+        # Task history
+        try:
+            recent = self.task_store.get_recent_tasks(limit=5)
+            if recent:
+                parts.append("# Recent Tasks\n")
+                for t in recent:
+                    parts.append(f"- {t.task_description[:200]}\n")
+        except Exception:
+            pass
+
+        return "\n".join(parts)
+
+    async def run_rlm(self, task: str, context: str = "") -> str:
+        """Run a task through the new RLM engine instead of the standard tool loop."""
+        logger.info("Starting RLM task: %s", task[:80])
+
+        if self.rlm_engine is None:
+            from rlm import SimpleRLM
+            self.rlm_engine = SimpleRLM(
+                ollama_client=self.ollama,
+                vector_store=self.vector_store,
+                mcp_client=self.mcp,
+            )
+
+        return await self.rlm_engine.completion(task, context)
 
     async def build_preamble(self) -> tuple[list, list]:
         """Fetch tools, build system prompt + schemas. Call once per session.
