@@ -557,7 +557,7 @@ Python version: 3.13+
 - pyyaml>=6.0
 - rich>=13.0.0
 - take-minutes>=0.4.0
-- qdrant-client>=1.12.0
+- chromadb>=1.5.0
 - chromadb>=0.4.0
 - curl (system package for scout CGI scripts)
 

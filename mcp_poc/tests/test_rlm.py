@@ -247,6 +247,7 @@ class TestSimpleRLM:
         """Full RLM loop: root LLM generates code that sets final_answer."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         rlm._llm_client = make_mock_llm_client(['final_answer = "42"'])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("what is the answer", ""))
@@ -256,6 +257,7 @@ class TestSimpleRLM:
         """Full RLM loop: root LLM generates code calling FINAL()."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         rlm._llm_client = make_mock_llm_client(['FINAL("done")'])
         rlm.max_iters = 5
         result = asyncio.run(rlm.completion("finish", ""))
@@ -265,6 +267,7 @@ class TestSimpleRLM:
         """Full RLM loop: reaches max iterations without final_answer."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         rlm._llm_client = make_mock_llm_client([
             "print('still working')",
             "print('still working')",
@@ -278,17 +281,20 @@ class TestSimpleRLM:
         """Full RLM loop: root LLM fails at iteration (caught by pre-flight ping)."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         client = AsyncMock()
         client.post = AsyncMock(side_effect=httpx.HTTPError("Ollama error"))
+        client.get = AsyncMock(side_effect=httpx.HTTPError("Ollama error"))
         rlm._llm_client = client
         rlm.max_iters = 3
         result = asyncio.run(rlm.completion("test", ""))
-        assert "Ollama unreachable" in result
+        assert "Ollama process is DOWN" in result
 
     def test_completion_loop_code_extraction(self):
         """Verifies code is extracted from markdown blocks."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         rlm._llm_client = make_mock_llm_client([
             "```python\nfinal_answer = 'from block'\n```"
         ])
@@ -300,6 +306,7 @@ class TestSimpleRLM:
         """Verifies storage dict persists across iterations."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
+        rlm._check_tunnel = AsyncMock(return_value=True)
         rlm._llm_client = make_mock_llm_client([
             "storage['count'] = 1\nprint('iter 1')",
             "storage['count'] = storage.get('count', 0) + 1\nprint('iter 2')",

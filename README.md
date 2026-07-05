@@ -101,7 +101,7 @@ mcp_poc/                          # Python agent (PoC)
 │   ├── test_embedding_service.py
 │   ├── test_vector_store.py
 │   └── test_knowledge_indexer.py
-├── requirements.txt              # Python dependencies (mcp, httpx, pyyaml, rich, qdrant-client)
+├── requirements.txt              # Python dependencies (mcp, httpx, pyyaml, rich)
 └── venv/                         # Virtual environment
 
 scout/                            # Scout CGI server (Go)

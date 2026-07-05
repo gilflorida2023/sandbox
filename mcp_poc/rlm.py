@@ -483,6 +483,22 @@ class SimpleRLM:
         finally:
             sys.stdout = old_stdout
 
+    async def _check_tunnel(self) -> bool:
+        """Override in tests to skip SSH check."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ssh", f"m4@{SSH_RESTART_HOST}",
+                "-o", "ConnectTimeout=5",
+                "-o", "BatchMode=yes",
+                "echo ok",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=8)
+            return proc.returncode == 0
+        except Exception:
+            return False
+
     async def completion(self, query: str, context: Any = None) -> str:
         """Main RLM entry point."""
         self.llm_call_count = 0
@@ -503,9 +519,20 @@ class SimpleRLM:
         iteration = 0
         print()
 
-        # Pre-flight ping: verify Ollama is responsive before entering the loop
+        # Pre-flight: check SSH tunnel, then Ollama health
         if self._llm_client is None:
             self._llm_client = httpx.AsyncClient(timeout=config.ollama.timeout)
+
+        # 1) Check SSH tunnel
+        print("  (checking SSH tunnel...)")
+        tunnel_ok = await self._check_tunnel()
+        if not tunnel_ok:
+            return (
+                f"\n[RLM] SSH tunnel to {SSH_RESTART_HOST} is DOWN.\n"
+                f"  Check: Mac is on, network is up, restart tunnel on Linux."
+            )
+
+        # 2) Check Ollama API
         print("  (pinging Ollama — waiting for model to load...)")
         ping_ok = False
         try:
@@ -522,7 +549,7 @@ class SimpleRLM:
             ping_resp.raise_for_status()
             ping_ok = True
         except Exception as e:
-            # Distinguish "completely down" vs "stale" (tags OK, chat fails)
+            # 3) Distinguish "Ollama process down" vs "stale" (tags OK, chat fails)
             try:
                 tags_resp = await self._llm_client.get(
                     f"{self.base_url}/api/tags", timeout=httpx.Timeout(5.0)
@@ -531,6 +558,14 @@ class SimpleRLM:
             except Exception:
                 tags_ok = False
 
+            if not tags_ok:
+                return (
+                    f"\n[RLM] Ollama process is DOWN on Mac ({SSH_RESTART_HOST}).\n"
+                    f"  SSH tunnel is up but Ollama is not responding.\n"
+                    f"  Run on Mac: open -a Ollama  (or restart it)"
+                )
+
+            # tags OK but chat fails → stale
             if tags_ok:
                 print("  (Ollama stale — restarting via SSH...)")
                 try:
@@ -563,12 +598,6 @@ class SimpleRLM:
                         f"\n[RLM] Ollama stale — restart failed: {repr(restart_e)}\n"
                         f"  Try manually on Mac: pkill -9 ollama && ollama serve"
                     )
-            else:
-                return (
-                    f"\n[RLM] Ollama unreachable at {self.base_url} with model '{self.model_name}': {repr(e)}\n"
-                    f"  Check: ollama is running, model is pulled, SSH tunnel is active."
-                )
-
         if not ping_ok:
             return f"\n[RLM] Ping failed — cannot proceed."
 
