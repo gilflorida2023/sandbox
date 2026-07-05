@@ -1,32 +1,13 @@
 import json
 import logging
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from chroma_store import UnifiedChromaStore, TODOS_COLLECTION
+
 logger = logging.getLogger(__name__)
-
-TODOS_DB = "todos.db"
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS todos (
-    id TEXT PRIMARY KEY,
-    description TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    parent_id TEXT,
-    session_id TEXT NOT NULL,
-    discoveries TEXT NOT NULL DEFAULT '[]',
-    created_at REAL NOT NULL,
-    completed_at REAL,
-    iteration_count INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_todos_session ON todos(session_id);
-CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
-CREATE INDEX IF NOT EXISTS idx_todos_parent ON todos(parent_id);
-"""
 
 
 @dataclass
@@ -61,109 +42,187 @@ class TodoList:
     def __init__(self, storage_path: str):
         self.storage = Path(storage_path)
         self.storage.mkdir(parents=True, exist_ok=True)
-        db_path = self.storage / TODOS_DB
-        self._db = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        self._db.executescript(SCHEMA_SQL)
+        self._store = UnifiedChromaStore(str(self.storage))
+
+    def _todo_to_metadata(self, todo: TodoItem) -> dict:
+        meta = {
+            "status": todo.status,
+            "session_id": todo.session_id,
+            "discoveries": json.dumps(todo.discoveries),
+            "created_at": todo.created_at,
+            "iteration_count": todo.iteration_count,
+        }
+        if todo.parent_id is not None:
+            meta["parent_id"] = todo.parent_id
+        if todo.completed_at is not None:
+            meta["completed_at"] = todo.completed_at
+        return meta
+
+    def _row_to_todo(self, row: dict) -> Optional[TodoItem]:
+        if not row:
+            return None
+        meta = row.get("metadata") or {}
+        doc = row.get("document", "")
+        discoveries_raw = meta.get("discoveries", "[]")
+        if isinstance(discoveries_raw, str):
+            discoveries = json.loads(discoveries_raw) if discoveries_raw else []
+        else:
+            discoveries = discoveries_raw or []
+        return TodoItem(
+            id=row["id"],
+            description=doc,
+            status=meta.get("status", "pending"),
+            parent_id=meta.get("parent_id"),
+            session_id=meta.get("session_id", ""),
+            discoveries=discoveries,
+            created_at=meta.get("created_at", 0.0),
+            completed_at=meta.get("completed_at"),
+            iteration_count=meta.get("iteration_count", 0),
+        )
 
     def create_todo(self, description: str, session_id: str, parent_id: Optional[str] = None) -> TodoItem:
         todo = TodoItem.new(description, session_id, parent_id)
-        self._db.execute(
-            """INSERT INTO todos
-               (id, description, status, parent_id, session_id, discoveries,
-                created_at, completed_at, iteration_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (todo.id, todo.description, todo.status, todo.parent_id,
-             todo.session_id, json.dumps(todo.discoveries),
-             todo.created_at, todo.completed_at, todo.iteration_count),
+        self._store.add_one(
+            TODOS_COLLECTION, todo.id,
+            metadata=self._todo_to_metadata(todo),
+            document=todo.description,
         )
-        self._db.commit()
         return todo
 
     def pick_next(self) -> Optional[TodoItem]:
-        row = self._db.execute(
-            """SELECT * FROM todos
-               WHERE status IN ('in_progress', 'pending')
-               ORDER BY
-                 CASE status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 END,
-                 created_at ASC
-               LIMIT 1"""
-        ).fetchone()
-        if row:
-            todo = self._row_to_todo(row)
-            if todo.status == "pending":
-                self.update_status(todo.id, "in_progress")
-                todo.status = "in_progress"
-            return todo
-        return None
+        results = self._store.get(
+            TODOS_COLLECTION,
+            limit=100,
+        )
+        candidates = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                row = {
+                    "id": results["ids"][i],
+                    "metadata": (results.get("metadatas") or [{}])[i],
+                    "document": (results.get("documents") or [""])[i],
+                }
+                todo = self._row_to_todo(row)
+                if todo and todo.status in ("in_progress", "pending"):
+                    candidates.append(todo)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda t: (
+            0 if t.status == "in_progress" else 1,
+            t.created_at,
+        ))
+        todo = candidates[0]
+        if todo.status == "pending":
+            self.update_status(todo.id, "in_progress")
+            todo.status = "in_progress"
+        return todo
 
     def update_status(self, todo_id: str, status: str):
         now = time.time() if status in ("completed", "blocked") else None
-        self._db.execute(
-            "UPDATE todos SET status = ?, completed_at = ? WHERE id = ?",
-            (status, now, todo_id),
-        )
-        self._db.commit()
+        todo = self.get_todo(todo_id)
+        if todo:
+            meta = self._todo_to_metadata(todo)
+            meta["status"] = status
+            if now:
+                meta["completed_at"] = now
+            self._store.update(
+                TODOS_COLLECTION,
+                ids=[todo_id],
+                metadatas=[meta],
+            )
 
     def increment_iteration(self, todo_id: str):
-        self._db.execute(
-            "UPDATE todos SET iteration_count = iteration_count + 1 WHERE id = ?",
-            (todo_id,),
-        )
-        self._db.commit()
+        todo = self.get_todo(todo_id)
+        if todo:
+            meta = self._todo_to_metadata(todo)
+            meta["iteration_count"] = meta.get("iteration_count", 0) + 1
+            self._store.update(
+                TODOS_COLLECTION,
+                ids=[todo_id],
+                metadatas=[meta],
+            )
 
     def add_discovery(self, todo_id: str, doc_id: str):
         todo = self.get_todo(todo_id)
         if todo and doc_id not in todo.discoveries:
             todo.discoveries.append(doc_id)
-            self._db.execute(
-                "UPDATE todos SET discoveries = ? WHERE id = ?",
-                (json.dumps(todo.discoveries), todo_id),
+            self._store.update(
+                TODOS_COLLECTION,
+                ids=[todo_id],
+                metadatas=[self._todo_to_metadata(todo)],
             )
-            self._db.commit()
 
     def get_todo(self, todo_id: str) -> Optional[TodoItem]:
-        row = self._db.execute(
-            "SELECT * FROM todos WHERE id = ?", (todo_id,)
-        ).fetchone()
-        return self._row_to_todo(row) if row else None
+        result = self._store.get_one(TODOS_COLLECTION, todo_id)
+        return self._row_to_todo(result) if result else None
 
     def get_sub_todos(self, parent_id: str) -> List[TodoItem]:
-        rows = self._db.execute(
-            "SELECT * FROM todos WHERE parent_id = ? ORDER BY created_at",
-            (parent_id,),
-        ).fetchall()
-        return [self._row_to_todo(r) for r in rows]
+        results = self._store.get(
+            TODOS_COLLECTION,
+            where={"parent_id": parent_id},
+        )
+        todos = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                row = {
+                    "id": results["ids"][i],
+                    "metadata": (results.get("metadatas") or [{}])[i],
+                    "document": (results.get("documents") or [""])[i],
+                }
+                todo = self._row_to_todo(row)
+                if todo:
+                    todos.append(todo)
+        todos.sort(key=lambda t: t.created_at)
+        return todos
 
     def get_session_todos(self, session_id: str) -> List[TodoItem]:
-        rows = self._db.execute(
-            "SELECT * FROM todos WHERE session_id = ? ORDER BY created_at",
-            (session_id,),
-        ).fetchall()
-        return [self._row_to_todo(r) for r in rows]
+        results = self._store.get(
+            TODOS_COLLECTION,
+            where={"session_id": session_id},
+        )
+        todos = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                row = {
+                    "id": results["ids"][i],
+                    "metadata": (results.get("metadatas") or [{}])[i],
+                    "document": (results.get("documents") or [""])[i],
+                }
+                todo = self._row_to_todo(row)
+                if todo:
+                    todos.append(todo)
+        todos.sort(key=lambda t: t.created_at)
+        return todos
 
     def get_all_todos(self) -> List[TodoItem]:
-        rows = self._db.execute(
-            "SELECT * FROM todos ORDER BY created_at"
-        ).fetchall()
-        return [self._row_to_todo(r) for r in rows]
+        results = self._store.get(TODOS_COLLECTION)
+        todos = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                row = {
+                    "id": results["ids"][i],
+                    "metadata": (results.get("metadatas") or [{}])[i],
+                    "document": (results.get("documents") or [""])[i],
+                }
+                todo = self._row_to_todo(row)
+                if todo:
+                    todos.append(todo)
+        todos.sort(key=lambda t: t.created_at)
+        return todos
 
     def completion_rate(self) -> float:
-        total = self._db.execute("SELECT COUNT(*) FROM todos").fetchone()[0]
-        if total == 0:
+        todos = self.get_all_todos()
+        if not todos:
             return 1.0
-        done = self._db.execute(
-            "SELECT COUNT(*) FROM todos WHERE status = 'completed'"
-        ).fetchone()[0]
-        return done / total
+        done = sum(1 for t in todos if t.status == "completed")
+        return done / len(todos)
 
     def count_by_status(self) -> dict:
-        rows = self._db.execute(
-            "SELECT status, COUNT(*) as cnt FROM todos GROUP BY status"
-        ).fetchall()
+        todos = self.get_all_todos()
         counts = {"pending": 0, "in_progress": 0, "completed": 0, "blocked": 0}
-        for r in rows:
-            counts[r["status"]] = r["cnt"]
+        for t in todos:
+            if t.status in counts:
+                counts[t.status] += 1
         return counts
 
     def todo_text(self, session_id: str, max_todos: int = 10) -> str:
@@ -183,23 +242,12 @@ class TodoList:
         return "\n".join(lines)
 
     def reset_session(self, session_id: str):
-        self._db.execute("DELETE FROM todos WHERE session_id = ?", (session_id,))
-        self._db.commit()
-
-    def _row_to_todo(self, row: sqlite3.Row) -> Optional[TodoItem]:
-        if not row:
-            return None
-        return TodoItem(
-            id=row["id"],
-            description=row["description"],
-            status=row["status"],
-            parent_id=row["parent_id"],
-            session_id=row["session_id"],
-            discoveries=json.loads(row["discoveries"]),
-            created_at=row["created_at"],
-            completed_at=row["completed_at"],
-            iteration_count=row["iteration_count"],
+        results = self._store.get(
+            TODOS_COLLECTION,
+            where={"session_id": session_id},
         )
+        if results and results.get("ids"):
+            self._store.delete(TODOS_COLLECTION, ids=results["ids"])
 
     def close(self):
-        self._db.close()
+        pass

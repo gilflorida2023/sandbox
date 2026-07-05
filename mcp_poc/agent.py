@@ -241,7 +241,7 @@ class CodingAgent:
         # Index wiki docs on startup (async-safe, uses synchronous httpx)
         try:
             self.knowledge_indexer.index_wiki(self.wiki)
-            logger.info("Wiki indexed: %d chunks in Qdrant", self.knowledge_indexer.wiki_count)
+            logger.info("Wiki indexed: %d chunks in ChromaDB", self.knowledge_indexer.wiki_count)
         except Exception as e:
             logger.warning("Failed to index wiki: %s", e)
 

@@ -1,80 +1,88 @@
 import json
 import logging
-import sqlite3
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from chroma_store import UnifiedChromaStore, CORRECTIONS_COLLECTION
+
 logger = logging.getLogger(__name__)
-
-CORRECTIONS_DB = "corrections.db"
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS corrections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    topic TEXT NOT NULL,
-    incorrect_output TEXT NOT NULL,
-    correct_output TEXT NOT NULL,
-    context TEXT DEFAULT '',
-    created_at REAL NOT NULL,
-    applied_count INTEGER DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_corrections_topic ON corrections(topic);
-"""
 
 
 class CorrectionStore:
-    """Stores user corrections to prevent repeated mistakes.
-
-    Users can correct the AI's responses via the REPL. Corrections
-    are stored by topic and injected into the context when the
-    model encounters a similar topic again.
-    """
-
     def __init__(self, storage_path: str):
         self.storage = Path(storage_path)
         self.storage.mkdir(parents=True, exist_ok=True)
-        db_path = self.storage / CORRECTIONS_DB
-        self._db = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        self._db.executescript(SCHEMA_SQL)
+        self._store = UnifiedChromaStore(str(self.storage))
 
     def add_correction(self, topic: str, incorrect: str,
                        correct: str, context: str = ""):
-        self._db.execute(
-            """INSERT INTO corrections
-               (topic, incorrect_output, correct_output, context, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (topic.strip(), incorrect.strip(), correct.strip(),
-             context.strip(), time.time()),
+        cid = str(uuid.uuid4())
+        self._store.add_one(
+            CORRECTIONS_COLLECTION, cid,
+            metadata={
+                "topic": topic.strip(),
+                "incorrect_output": incorrect.strip(),
+                "correct_output": correct.strip(),
+                "context": context.strip(),
+                "created_at": time.time(),
+                "applied_count": 0,
+            },
+            document=topic.strip(),
         )
-        self._db.commit()
-        logger.info("Stored correction for topic '%s'", topic)
+        logger.info("Stored correction for topic '%s' (id=%s)", topic, cid)
 
     def get_corrections(self, topic: str, limit: int = 5) -> List[Dict]:
-        rows = self._db.execute(
-            """SELECT * FROM corrections
-               WHERE topic LIKE ?
-               ORDER BY created_at DESC
-               LIMIT ?""",
-            (f"%{topic}%", limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        results = self._store.get(
+            CORRECTIONS_COLLECTION,
+            where_document={"$contains": topic},
+            limit=limit * 2,
+        )
+        corrections = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                meta = (results.get("metadatas") or [{}])[i] or {}
+                corrections.append({
+                    "id": results["ids"][i],
+                    "topic": meta.get("topic", ""),
+                    "incorrect_output": meta.get("incorrect_output", ""),
+                    "correct_output": meta.get("correct_output", ""),
+                    "context": meta.get("context", ""),
+                    "created_at": meta.get("created_at", 0.0),
+                    "applied_count": meta.get("applied_count", 0),
+                })
+        corrections.sort(key=lambda c: c["created_at"], reverse=True)
+        return corrections[:limit]
 
     def get_all_corrections(self, limit: int = 50) -> List[Dict]:
-        rows = self._db.execute(
-            "SELECT * FROM corrections ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        results = self._store.get(CORRECTIONS_COLLECTION, limit=limit * 2)
+        corrections = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                meta = (results.get("metadatas") or [{}])[i] or {}
+                corrections.append({
+                    "id": results["ids"][i],
+                    "topic": meta.get("topic", ""),
+                    "incorrect_output": meta.get("incorrect_output", ""),
+                    "correct_output": meta.get("correct_output", ""),
+                    "context": meta.get("context", ""),
+                    "created_at": meta.get("created_at", 0.0),
+                    "applied_count": meta.get("applied_count", 0),
+                })
+        corrections.sort(key=lambda c: c["created_at"], reverse=True)
+        return corrections[:limit]
 
-    def increment_applied(self, correction_id: int):
-        self._db.execute(
-            "UPDATE corrections SET applied_count = applied_count + 1 WHERE id = ?",
-            (correction_id,),
-        )
-        self._db.commit()
+    def increment_applied(self, correction_id: str):
+        result = self._store.get_one(CORRECTIONS_COLLECTION, correction_id)
+        if result and result.get("metadata"):
+            meta = dict(result["metadata"])
+            meta["applied_count"] = meta.get("applied_count", 0) + 1
+            self._store.update(
+                CORRECTIONS_COLLECTION,
+                ids=[correction_id],
+                metadatas=[meta],
+            )
 
     def format_corrections_for_context(self, topic: str) -> str:
         corrections = self.get_corrections(topic)
@@ -91,7 +99,7 @@ class CorrectionStore:
         return "\n".join(lines)
 
     def count(self) -> int:
-        return self._db.execute("SELECT COUNT(*) FROM corrections").fetchone()[0]
+        return self._store.count(CORRECTIONS_COLLECTION)
 
     def close(self):
-        self._db.close()
+        pass

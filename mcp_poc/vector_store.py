@@ -1,28 +1,13 @@
-import json
 import logging
 import os
-from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
 
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as qmodels
-from qdrant_client.http.exceptions import UnexpectedResponse
+from chroma_store import (
+    UnifiedChromaStore, SearchResult,
+    WIKI_COLLECTION, KNOWLEDGE_COLLECTION,
+)
 
 logger = logging.getLogger(__name__)
-
-WIKI_COLLECTION = "wiki_docs"
-KNOWLEDGE_COLLECTION = "knowledge_chunks"
-
-
-@dataclass
-class SearchResult:
-    content: str
-    source: str
-    score: float
-    tags: List[str] = field(default_factory=list)
-    doc_id: str = ""
-    collection: str = ""
 
 
 class VectorStore:
@@ -30,73 +15,45 @@ class VectorStore:
         self.storage_path = storage_path
         self.embedding_dim = embedding_dim
         os.makedirs(storage_path, exist_ok=True)
-        self.client = QdrantClient(path=storage_path)
-        self._ensure_collections()
-
-    def _ensure_collections(self):
-        for name in (WIKI_COLLECTION, KNOWLEDGE_COLLECTION):
-            if not self.client.collection_exists(name):
-                logger.info("Creating Qdrant collection '%s' (dim=%d)", name, self.embedding_dim)
-                self.client.create_collection(
-                    collection_name=name,
-                    vectors_config=qmodels.VectorParams(
-                        size=self.embedding_dim,
-                        distance=qmodels.Distance.COSINE,
-                    ),
-                )
+        self.store = UnifiedChromaStore(storage_path, embedding_dim=embedding_dim)
 
     def insert(self, collection: str, doc_id: str, vector: List[float],
                payload: Dict[str, Any]):
-        self.client.upsert(
-            collection_name=collection,
-            points=[qmodels.PointStruct(id=doc_id, vector=vector, payload=payload)],
+        self.store.add_one(
+            collection, doc_id,
+            embedding=vector,
+            metadata=payload,
+            document=payload.get("content", ""),
         )
 
-    def insert_batch(self, collection: str, points: List[qmodels.PointStruct]):
-        self.client.upsert(collection_name=collection, points=points)
+    def insert_batch(self, collection: str, points: List[Any]):
+        ids = []
+        embeddings = []
+        metadatas = []
+        documents = []
+        for p in points:
+            payload = p.payload if hasattr(p, "payload") else p.get("payload", {})
+            doc_id = str(p.id if hasattr(p, "id") else p["id"])
+            vec = p.vector if hasattr(p, "vector") else p["vector"]
+            ids.append(doc_id)
+            embeddings.append(vec)
+            metadatas.append(payload)
+            documents.append(payload.get("content", ""))
+        self.store.add(collection, ids, embeddings, metadatas, documents)
 
     def search(self, collection: str, vector: List[float],
                top_k: int = 5, score_threshold: Optional[float] = None) -> List[SearchResult]:
-        kwargs = dict(
-            collection_name=collection,
-            query=vector,
-            limit=top_k,
-        )
-        if score_threshold is not None:
-            kwargs["score_threshold"] = score_threshold
-        hits = self.client.query_points(**kwargs).points
-        results = []
-        for hit in hits:
-            p = hit.payload or {}
-            results.append(SearchResult(
-                content=p.get("content", ""),
-                source=p.get("source", ""),
-                score=hit.score,
-                tags=p.get("tags", []),
-                doc_id=str(hit.id),
-                collection=collection,
-            ))
-        return results
+        return self.store.search(collection, vector, top_k=top_k, score_threshold=score_threshold)
 
     def search_all(self, vector: List[float], top_k: int = 5,
                    score_threshold: Optional[float] = None) -> List[SearchResult]:
-        wiki_results = self.search(WIKI_COLLECTION, vector, top_k, score_threshold)
-        kb_results = self.search(KNOWLEDGE_COLLECTION, vector, top_k, score_threshold)
-        combined = sorted(wiki_results + kb_results, key=lambda r: r.score, reverse=True)
-        return combined[:top_k]
+        return self.store.search_all(vector, top_k=top_k, score_threshold=score_threshold)
 
     def count(self, collection: str) -> int:
-        try:
-            info = self.client.get_collection(collection)
-            return info.points_count
-        except Exception:
-            return 0
+        return self.store.count(collection)
 
     def delete_collection(self, collection: str):
-        try:
-            self.client.delete_collection(collection)
-        except Exception:
-            pass
+        self.store.delete_collection(collection)
 
     def close(self):
-        self.client.close()
+        self.store.close()

@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from pathlib import Path
@@ -66,7 +67,7 @@ class KnowledgeIndexer:
         self._indexed = False
 
     def index_wiki(self, wiki: ToolWiki):
-        """Load wiki docs, chunk, embed, and index into Qdrant."""
+        """Load wiki docs, chunk, embed, and index into ChromaDB."""
         wiki_path = wiki.wiki_path
         tools_dir = wiki_path / "tools"
         guides_dir = wiki_path / "guides"
@@ -101,13 +102,12 @@ class KnowledgeIndexer:
                     })
 
         if points:
-            from qdrant_client.http import models as qmodels
             batch = [
-                qmodels.PointStruct(id=p["doc_id"], vector=p["vector"], payload=p["payload"])
+                {"id": p["doc_id"], "vector": p["vector"], "payload": p["payload"]}
                 for p in points
             ]
             self.store.insert_batch(WIKI_COLLECTION, batch)
-            logger.info("Indexed %d wiki chunks into Qdrant", len(points))
+            logger.info("Indexed %d wiki chunks into ChromaDB", len(points))
         else:
             logger.info("No wiki chunks to index")
 
@@ -124,7 +124,7 @@ class KnowledgeIndexer:
         self.store.insert(KNOWLEDGE_COLLECTION, doc_id, vec, {
             "content": content,
             "source": source,
-            "tags": tags or [],
+            "tags": json.dumps(tags or []),
         })
         return doc_id
 

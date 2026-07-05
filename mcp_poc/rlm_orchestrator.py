@@ -2,9 +2,11 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+from chroma_store import KNOWLEDGE_COLLECTION
 from config import config
 from ollama_client import OllamaClient
 from todo_list import TodoItem, TodoList
@@ -437,10 +439,11 @@ class RlmOrchestrator:
                 try:
                     vec = self.embed_service.embed(disc)
                     if vec:
-                        doc_id = self.vector_store.store(
-                            text=disc,
-                            source=f"rlm:{session_id}",
+                        doc_id = self.vector_store.insert(
+                            KNOWLEDGE_COLLECTION,
+                            doc_id=str(uuid.uuid4()),
                             vector=vec,
+                            payload={"content": disc, "source": f"rlm:{session_id}"},
                         )
                         self.todo_list.add_discovery(todo.id, doc_id)
                         logger.info("Stored discovery: %s", disc[:60])

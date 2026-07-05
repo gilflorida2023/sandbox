@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from chroma_store import UnifiedChromaStore, EXPLORATIONS_COLLECTION
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,13 +46,7 @@ class RecursiveSolver:
         self.chroma_path = self.workspace_path / ".explorations" / self.exploration_id
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
-        import chromadb
-        self._chromadb = chromadb
-        self.chroma_client = chromadb.PersistentClient(str(self.chroma_path))
-        self.master_index = self.chroma_client.get_or_create_collection(
-            name="master_index",
-            metadata={"hnsw:space": "cosine"},
-        )
+        self.chroma = UnifiedChromaStore(str(self.chroma_path))
 
         self.iteration = 0
         self.solutions: list[dict] = []
@@ -96,11 +92,11 @@ class RecursiveSolver:
 
     def _retrieve(self, query: str, top_k: Optional[int] = None) -> list[dict]:
         k = top_k or self.retrieval_top_k
-        if self.master_index.count() == 0:
+        if self.chroma.count(EXPLORATIONS_COLLECTION) == 0:
             return []
         try:
             q_emb = self._embed(query)
-            results = self.master_index.query(query_embeddings=[q_emb], n_results=min(k, self.master_index.count()))
+            results = self.chroma.query(EXPLORATIONS_COLLECTION, query_embeddings=[q_emb], n_results=min(k, self.chroma.count(EXPLORATIONS_COLLECTION)))
             hits = []
             if results["ids"] and results["ids"][0]:
                 for i, doc_id in enumerate(results["ids"][0]):
@@ -120,7 +116,8 @@ class RecursiveSolver:
             return
         ids = [f"{self.exploration_id}_iter{self.iteration}_{i}" for i in range(len(texts))]
         embeddings = [self._embed(t) for t in texts]
-        self.master_index.add(
+        self.chroma.add(
+            EXPLORATIONS_COLLECTION,
             ids=ids,
             embeddings=embeddings,
             documents=texts,
@@ -220,7 +217,7 @@ class RecursiveSolver:
         return self._chat(messages, temperature=0.4)
 
     def _compact(self) -> str:
-        all_docs = self.master_index.get()
+        all_docs = self.chroma.get(EXPLORATIONS_COLLECTION)
         if not all_docs or not all_docs.get("documents"):
             return ""
         combined = "\n\n".join(all_docs["documents"][-50:])

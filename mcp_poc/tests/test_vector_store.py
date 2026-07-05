@@ -53,12 +53,9 @@ class TestVectorStore(unittest.TestCase):
         self.assertEqual(len(results), 1)
 
     def test_insert_batch(self):
-        from qdrant_client.http import models as qmodels
         points = [
-            qmodels.PointStruct(
-                id=self._uid(), vector=[float(i)] + [0.0] * 7,
-                payload={"content": f"batch {i}", "source": "test"}
-            )
+            {"id": self._uid(), "vector": [float(i)] + [0.0] * 7,
+             "payload": {"content": f"batch {i}", "source": "test"}}
             for i in range(3)
         ]
         self.vs.insert_batch(self.WIKI, points)

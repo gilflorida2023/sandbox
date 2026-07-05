@@ -1,39 +1,33 @@
-"""Windowed prime-sieve knowledge accumulation system backed by SQLite.
+"""Windowed prime-sieve knowledge accumulation system backed by ChromaDB.
 
-Same API as WindowedContext in windowed_context.py, but persistence is
-handled by SQLite with FTS5 full-text search instead of flat JSON files.
+API-compatible with the original SQLite-backed version.
+Persistence is automatic — save()/load() are no-ops kept for API compat.
 """
 
 import hashlib
 import json
 import logging
 import re
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Callable
+
+from chroma_store import UnifiedChromaStore, KNOWLEDGE_COLLECTION
 
 logger = logging.getLogger(__name__)
 
-# ── Constants ──────────────────────────────────────────────────────────────
-
 DB_FILENAME = "knowledge.db"
-CHUNKS_FILE = "chunks.json"  # legacy file for migration
+CHUNKS_FILE = "chunks.json"
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-# Default keywords that indicate contaminated/noisy knowledge — skip on ingestion
-# Can be overridden via WindowedContextDB(blacklist=...) or config.yaml
 DEFAULT_BLACKLIST = {
     "simplesieve", "primesieve", "prime sieve", "sieve of eratosthenes",
 }
 
-# Compiled cache for regex blacklist patterns
 _regex_blacklist_cache: list = []
 
+
 def _compile_regex_blacklist(patterns: list) -> list:
-    """Compile list of regex pattern strings into re.Pattern objects."""
     compiled = []
     for p in patterns:
         try:
@@ -42,8 +36,9 @@ def _compile_regex_blacklist(patterns: list) -> list:
             logger.warning("Invalid regex blacklist pattern %r: %s", p, e)
     return compiled
 
+
 def _is_contaminated(content: str, blacklist: set = None,
-                      blacklist_regex: list = None) -> bool:
+                     blacklist_regex: list = None) -> bool:
     bl = blacklist or DEFAULT_BLACKLIST
     cl = content.lower()
     if any(kw in cl for kw in bl):
@@ -54,8 +49,10 @@ def _is_contaminated(content: str, blacklist: set = None,
                 return True
     return False
 
+
 def _estimate_tokens(text: str) -> int:
     return len(text) // 4
+
 
 def _truncate_at_tokens(text: str, max_tokens: int) -> str:
     if _estimate_tokens(text) <= max_tokens:
@@ -89,9 +86,6 @@ def _match_content(content: str, query: str) -> float:
     if not words:
         return 0.0
     return min(1.0, word_hits / len(words))
-
-
-# ── Data ───────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -130,42 +124,7 @@ class KnowledgeChunk:
         return min(1.0, self.weight * decay * freq_bonus)
 
 
-# ── Schema ─────────────────────────────────────────────────────────────────
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS chunks (
-    chunk_id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    tags TEXT NOT NULL DEFAULT '[]',
-    source TEXT NOT NULL DEFAULT 'manual',
-    weight REAL NOT NULL DEFAULT 0.5,
-    created_at REAL NOT NULL,
-    accessed_at REAL NOT NULL,
-    access_count INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_chunks_created_at ON chunks(created_at);
-CREATE INDEX IF NOT EXISTS idx_chunks_accessed_at ON chunks(accessed_at);
-CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-    chunk_id UNINDEXED,
-    content,
-    tags,
-    tokenize='porter unicode61'
-);
-"""
-
-# ── SQLite-backed accumulator ──────────────────────────────────────────────
-
-
 class WindowedContextDB:
-    """Prime-sieve knowledge accumulator backed by SQLite + FTS5.
-
-    API-compatible with WindowedContext (windowed_context.py).
-    Persistence is automatic — save()/load() are no-ops kept for API compat.
-    """
-
     def __init__(self, storage_path: str, max_window: int = 30,
                  max_total: int = 500, blacklist: set = None,
                  blacklist_regex: list = None):
@@ -177,75 +136,54 @@ class WindowedContextDB:
         self.blacklist_regex = _compile_regex_blacklist(blacklist_regex or [])
 
         db_path = self.storage / DB_FILENAME
-        self._db = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        self._db.executescript(SCHEMA_SQL)
-
+        self._db_path = str(db_path)
+        self._store = UnifiedChromaStore(str(self.storage))
         self._maybe_migrate_from_json()
-
-    # ── Migration from legacy JSON ──────────────────────────────────────
 
     def _maybe_migrate_from_json(self):
         path = self.storage / CHUNKS_FILE
         if not path.exists():
             return
-        count = self._db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        count = self._store.count(KNOWLEDGE_COLLECTION)
         if count > 0:
             return
         try:
             data = json.loads(path.read_text())
             for d in data:
-                tags = d.get("tags", [])
-                if isinstance(tags, list):
-                    tags = json.dumps(tags)
-                self._db.execute(
-                    """INSERT OR IGNORE INTO chunks
-                       (chunk_id, content, tags, source, weight,
-                        created_at, accessed_at, access_count)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (d["chunk_id"], d["content"], tags,
-                     d.get("source", "manual"), d.get("weight", 0.5),
-                     d.get("created_at", 0), d.get("accessed_at", 0),
-                     d.get("access_count", 0)),
+                self.add(
+                    d["content"],
+                    source=d.get("source", "manual"),
+                    tags=d.get("tags", []),
                 )
-                self._db.execute(
-                    "INSERT OR IGNORE INTO chunks_fts(chunk_id, content, tags) VALUES (?, ?, ?)",
-                    (d["chunk_id"], d["content"], tags),
-                )
-            self._db.commit()
             logger.info("Migrated %d chunks from %s", len(data), path)
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("Migration failed from %s: %s", path, e)
 
-    # ── Row conversion ──────────────────────────────────────────────────
-
     @staticmethod
-    def _row_to_chunk(row: sqlite3.Row) -> KnowledgeChunk:
-        tags_raw = row["tags"]
+    def _row_to_chunk(row: dict) -> KnowledgeChunk:
+        meta = row.get("metadata") or row
+        tags_raw = meta.get("tags", "[]")
         if isinstance(tags_raw, str):
             tags = json.loads(tags_raw) if tags_raw else []
         else:
             tags = tags_raw or []
+        document = row.get("document", meta.get("content", ""))
         return KnowledgeChunk(
-            chunk_id=row["chunk_id"],
-            content=row["content"],
+            chunk_id=row["id"],
+            content=document,
             tags=tags,
-            source=row["source"],
-            weight=row["weight"],
-            created_at=row["created_at"],
-            accessed_at=row["accessed_at"],
-            access_count=row["access_count"],
+            source=meta.get("source", "manual"),
+            weight=meta.get("weight", 0.5),
+            created_at=meta.get("created_at", 0.0),
+            accessed_at=meta.get("accessed_at", 0.0),
+            access_count=meta.get("access_count", 0),
         )
 
-    # ── Blacklist management ────────────────────────────────────────────
-
     def add_blacklist_pattern(self, pattern: str):
-        """Add a substring blacklist pattern at runtime."""
         self.blacklist.add(pattern.lower())
         logger.info("Added blacklist pattern: %s", pattern)
 
     def add_blacklist_regex(self, pattern: str):
-        """Add a regex blacklist pattern at runtime."""
         try:
             compiled = re.compile(pattern, re.IGNORECASE)
             self.blacklist_regex.append(compiled)
@@ -253,89 +191,90 @@ class WindowedContextDB:
         except re.error as e:
             logger.warning("Invalid regex pattern %r: %s", pattern, e)
 
-    # ── Public API ──────────────────────────────────────────────────────
-
     def add(self, content: str, source: str = "manual",
             tags: Optional[List[str]] = None) -> str:
         if _is_contaminated(content, self.blacklist, self.blacklist_regex):
             logger.debug("Skipping contaminated chunk: %.80s", content)
             return ""
         chunk = KnowledgeChunk.new(content, source=source, tags=tags)
-        existing = self._db.execute(
-            "SELECT * FROM chunks WHERE chunk_id = ?", (chunk.chunk_id,)
-        ).fetchone()
-
-        if existing:
-            weight = min(1.0, existing["weight"] + 0.1)
-            access_count = existing["access_count"] + 1
+        existing = self._store.get_one(KNOWLEDGE_COLLECTION, chunk.chunk_id)
+        if existing is not None:
+            meta = existing.get("metadata") or {}
+            weight = min(1.0, meta.get("weight", 0.5) + 0.1)
+            access_count = meta.get("access_count", 0) + 1
             now = _now()
-            merged_tags = list(set(json.loads(existing["tags"]) if isinstance(existing["tags"], str) else (existing["tags"] or [])) | set(chunk.tags))
-            self._db.execute(
-                """UPDATE chunks SET weight=?, access_count=?, accessed_at=?,
-                   tags=?, source=?
-                   WHERE chunk_id=?""",
-                (weight, access_count, now, json.dumps(merged_tags),
-                 source, chunk.chunk_id),
+            merged_tags = list(set(
+                (json.loads(meta.get("tags", "[]")) if isinstance(meta.get("tags"), str) else (meta.get("tags") or []))
+            ) | set(chunk.tags))
+            self._store.update(
+                KNOWLEDGE_COLLECTION,
+                ids=[chunk.chunk_id],
+                metadatas=[{
+                    "weight": weight,
+                    "access_count": access_count,
+                    "accessed_at": now,
+                    "tags": json.dumps(merged_tags),
+                    "source": source,
+                    "created_at": meta.get("created_at", now),
+                }],
+                documents=[chunk.content],
             )
-            self._db.commit()
             logger.debug("Bumped existing chunk %s (weight=%.2f, access=%d)",
                          chunk.chunk_id, weight, access_count)
             return chunk.chunk_id
 
         tags_json = json.dumps(chunk.tags)
-        self._db.execute(
-            """INSERT INTO chunks
-               (chunk_id, content, tags, source, weight,
-                created_at, accessed_at, access_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (chunk.chunk_id, chunk.content, tags_json, chunk.source,
-             chunk.weight, chunk.created_at, chunk.accessed_at,
-             chunk.access_count),
+        self._store.add_one(
+            KNOWLEDGE_COLLECTION, chunk.chunk_id,
+            metadata={
+                "source": chunk.source,
+                "tags": tags_json,
+                "weight": chunk.weight,
+                "created_at": chunk.created_at,
+                "accessed_at": chunk.accessed_at,
+                "access_count": chunk.access_count,
+            },
+            document=chunk.content,
         )
-        self._db.execute(
-            "INSERT INTO chunks_fts(chunk_id, content, tags) VALUES (?, ?, ?)",
-            (chunk.chunk_id, chunk.content, tags_json),
-        )
-        self._db.commit()
         logger.info("Added chunk %s (source=%s, tags=%s)",
                      chunk.chunk_id, source, tags)
         return chunk.chunk_id
 
     def add_chunk(self, chunk: KnowledgeChunk) -> str:
-        existing = self._db.execute(
-            "SELECT * FROM chunks WHERE chunk_id = ?", (chunk.chunk_id,)
-        ).fetchone()
-
-        if existing:
-            weight = min(1.0, existing["weight"] + 0.1)
-            access_count = existing["access_count"] + 1
+        existing = self._store.get_one(KNOWLEDGE_COLLECTION, chunk.chunk_id)
+        if existing is not None:
+            meta = existing.get("metadata") or {}
+            weight = min(1.0, meta.get("weight", 0.5) + 0.1)
+            access_count = meta.get("access_count", 0) + 1
             now = _now()
-            merged_tags = list(set(json.loads(existing["tags"]) if isinstance(existing["tags"], str) else (existing["tags"] or [])) | set(chunk.tags))
-            self._db.execute(
-                """UPDATE chunks SET weight=?, access_count=?, accessed_at=?,
-                   tags=?
-                   WHERE chunk_id=?""",
-                (weight, access_count, now, json.dumps(merged_tags),
-                 chunk.chunk_id),
+            merged_tags = list(set(
+                (json.loads(meta.get("tags", "[]")) if isinstance(meta.get("tags"), str) else (meta.get("tags") or []))
+            ) | set(chunk.tags))
+            self._store.update(
+                KNOWLEDGE_COLLECTION,
+                ids=[chunk.chunk_id],
+                metadatas=[{
+                    "weight": weight,
+                    "access_count": access_count,
+                    "accessed_at": now,
+                    "tags": json.dumps(merged_tags),
+                    "source": chunk.source,
+                }],
             )
-            self._db.commit()
             return chunk.chunk_id
 
-        tags_json = json.dumps(chunk.tags)
-        self._db.execute(
-            """INSERT INTO chunks
-               (chunk_id, content, tags, source, weight,
-                created_at, accessed_at, access_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (chunk.chunk_id, chunk.content, tags_json, chunk.source,
-             chunk.weight, chunk.created_at, chunk.accessed_at,
-             chunk.access_count),
+        self._store.add_one(
+            KNOWLEDGE_COLLECTION, chunk.chunk_id,
+            metadata={
+                "source": chunk.source,
+                "tags": json.dumps(chunk.tags),
+                "weight": chunk.weight,
+                "created_at": chunk.created_at,
+                "accessed_at": chunk.accessed_at,
+                "access_count": chunk.access_count,
+            },
+            document=chunk.content,
         )
-        self._db.execute(
-            "INSERT INTO chunks_fts(chunk_id, content, tags) VALUES (?, ?, ?)",
-            (chunk.chunk_id, chunk.content, tags_json),
-        )
-        self._db.commit()
         return chunk.chunk_id
 
     def query(self, text: str, max_results: int = 5) -> List[KnowledgeChunk]:
@@ -343,96 +282,157 @@ class WindowedContextDB:
         if not terms:
             return []
 
-        # Try FTS5 for content search
-        fts_query = " AND ".join(f'"{t}"' for t in terms)
+        # Try content-based $contains search via where_document
         try:
-            fts_rows = self._db.execute(
-                """SELECT c.*
-                   FROM chunks_fts f
-                   JOIN chunks c ON c.chunk_id = f.chunk_id
-                   WHERE chunks_fts MATCH ?
-                   ORDER BY rank
-                   LIMIT ?""",
-                (fts_query, max_results * 3),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            fts_rows = []
+            # Use the first few meaningful terms for matching
+            query_terms = " ".join(terms[:5])
+            results = self._store.get(
+                KNOWLEDGE_COLLECTION,
+                where_document={"$contains": query_terms},
+                limit=max_results * 5,
+            )
+        except Exception:
+            results = {"ids": [], "metadatas": [], "documents": []}
 
         scored = []
         seen_ids = set()
+        fts_rows = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                meta = (results.get("metadatas") or [{}])[i] or {}
+                doc = (results.get("documents") or [""])[i] or ""
+                fts_rows.append({
+                    "id": results["ids"][i],
+                    "metadata": meta,
+                    "document": doc,
+                })
 
         if fts_rows:
             now = _now()
             for row in fts_rows:
-                chunk = self._row_to_chunk(row)
+                meta = row["metadata"]
+                tags_raw = meta.get("tags", "[]")
+                tags = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+                chunk = KnowledgeChunk(
+                    chunk_id=row["id"],
+                    content=row["document"],
+                    tags=tags,
+                    source=meta.get("source", ""),
+                    weight=meta.get("weight", 0.5),
+                    created_at=meta.get("created_at", 0.0),
+                    accessed_at=meta.get("accessed_at", 0.0),
+                    access_count=meta.get("access_count", 0),
+                )
                 tag_score = _match_tags(chunk.tags, text)
                 content_score = _match_content(chunk.content, text)
                 combined = (tag_score * 0.4 + content_score * 0.6) * chunk.current_weight()
                 scored.append((combined, chunk))
                 seen_ids.add(chunk.chunk_id)
 
-        # Fallback: scan all chunks if FTS5 returned nothing
+        # Fallback: scan all if FTS-like search returned nothing
         if not scored:
-            all_rows = self._db.execute("SELECT * FROM chunks").fetchall()
-            for row in all_rows:
-                chunk = self._row_to_chunk(row)
-                tag_score = _match_tags(chunk.tags, text)
-                content_score = _match_content(chunk.content, text)
-                if tag_score == 0.0 and content_score == 0.0:
-                    continue
-                combined = (tag_score * 0.4 + content_score * 0.6) * chunk.current_weight()
-                scored.append((combined, chunk))
+            all_results = self._store.get(KNOWLEDGE_COLLECTION)
+            if all_results and all_results.get("ids"):
+                for i in range(len(all_results["ids"])):
+                    meta = (all_results.get("metadatas") or [{}])[i] or {}
+                    doc = (all_results.get("documents") or [""])[i] or ""
+                    tags_raw = meta.get("tags", "[]")
+                    tags = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+                    chunk = KnowledgeChunk(
+                        chunk_id=all_results["ids"][i],
+                        content=doc,
+                        tags=tags,
+                        source=meta.get("source", ""),
+                        weight=meta.get("weight", 0.5),
+                        created_at=meta.get("created_at", 0.0),
+                        accessed_at=meta.get("accessed_at", 0.0),
+                        access_count=meta.get("access_count", 0),
+                    )
+                    tag_score = _match_tags(chunk.tags, text)
+                    content_score = _match_content(chunk.content, text)
+                    if tag_score == 0.0 and content_score == 0.0:
+                        continue
+                    combined = (tag_score * 0.4 + content_score * 0.6) * chunk.current_weight()
+                    scored.append((combined, chunk))
 
         scored.sort(key=lambda x: -x[0])
-        results = [chunk for _, chunk in scored[:max_results]]
+        results_list = [chunk for _, chunk in scored[:max_results]]
 
-        # Update access tracking
-        for chunk in results:
-            self._db.execute(
-                "UPDATE chunks SET access_count = access_count + 1, accessed_at = ? WHERE chunk_id = ?",
-                (_now(), chunk.chunk_id),
-            )
-        if results:
-            self._db.commit()
+        for chunk in results_list:
+            meta = self._store.get_one(KNOWLEDGE_COLLECTION, chunk.chunk_id)
+            if meta:
+                m = meta.get("metadata") or {}
+                self._store.update(
+                    KNOWLEDGE_COLLECTION,
+                    ids=[chunk.chunk_id],
+                    metadatas=[{
+                        **m,
+                        "access_count": m.get("access_count", 0) + 1,
+                        "accessed_at": _now(),
+                    }],
+                )
 
-        return results
+        return results_list
 
     def window(self, max_size: Optional[int] = None) -> List[KnowledgeChunk]:
         size = max_size or self.max_window
-        rows = self._db.execute("SELECT * FROM chunks").fetchall()
-        chunks = [self._row_to_chunk(r) for r in rows]
+        results = self._store.get(KNOWLEDGE_COLLECTION)
+        chunks = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                meta = (results.get("metadatas") or [{}])[i] or {}
+                doc = (results.get("documents") or [""])[i] or ""
+                tags_raw = meta.get("tags", "[]")
+                tags = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+                chunks.append(KnowledgeChunk(
+                    chunk_id=results["ids"][i],
+                    content=doc,
+                    tags=tags,
+                    source=meta.get("source", ""),
+                    weight=meta.get("weight", 0.5),
+                    created_at=meta.get("created_at", 0.0),
+                    accessed_at=meta.get("accessed_at", 0.0),
+                    access_count=meta.get("access_count", 0),
+                ))
         chunks.sort(key=lambda c: c.current_weight(), reverse=True)
         return chunks[:size]
 
     def prune(self, max_total: Optional[int] = None) -> int:
         limit = max_total or self.max_total
-        count = self._db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        results = self._store.get(KNOWLEDGE_COLLECTION)
+        if not results or not results.get("ids"):
+            return 0
+        count = len(results["ids"])
         if count <= limit:
             return 0
         excess = count - limit
-        rows = self._db.execute("SELECT * FROM chunks").fetchall()
-        chunks = [(self._row_to_chunk(r), r["chunk_id"]) for r in rows]
+        chunks = []
+        for i in range(len(results["ids"])):
+            meta = (results.get("metadatas") or [{}])[i] or {}
+            doc = (results.get("documents") or [""])[i] or ""
+            tags_raw = meta.get("tags", "[]")
+            tags = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+            chunks.append((KnowledgeChunk(
+                chunk_id=results["ids"][i],
+                content=doc,
+                tags=tags,
+                source=meta.get("source", ""),
+                weight=meta.get("weight", 0.5),
+                created_at=meta.get("created_at", 0.0),
+                accessed_at=meta.get("accessed_at", 0.0),
+                access_count=meta.get("access_count", 0),
+            ), results["ids"][i]))
         chunks.sort(key=lambda x: x[0].current_weight())
         evict_ids = [cid for _, cid in chunks[:excess]]
-        placeholders = ",".join("?" for _ in evict_ids)
-        self._db.execute(
-            f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", evict_ids
-        )
-        self._db.execute(
-            """DELETE FROM chunks_fts WHERE chunk_id NOT IN (
-                SELECT chunk_id FROM chunks
-            )"""
-        )
-        self._db.commit()
+        for cid in evict_ids:
+            self._store.delete(KNOWLEDGE_COLLECTION, ids=[cid])
         removed = excess
         logger.info("Pruned %d chunks (kept %d / %d max)",
                      removed, limit, limit)
         return removed
 
     def count(self) -> int:
-        return self._db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-
-    # ── Session log ingestion ───────────────────────────────────────────
+        return self._store.count(KNOWLEDGE_COLLECTION)
 
     def ingest_session_log(self, log_path: str, store_callback=None) -> int:
         path = Path(log_path)
@@ -542,15 +542,11 @@ class WindowedContextDB:
             total += self.ingest_session_log(str(f))
         return total
 
-    # ── Convenience helpers ─────────────────────────────────────────────
-
     def add_note(self, content: str, tags: Optional[List[str]] = None) -> str:
         return self.add(content, source="note", tags=tags)
 
     def add_guide(self, name: str, content: str) -> str:
         return self.add(content, source="guide", tags=["guide", name])
-
-    # ── Persistence (no-ops for API compat) ─────────────────────────────
 
     def save(self):
         pass
@@ -558,9 +554,7 @@ class WindowedContextDB:
     def load(self):
         pass
 
-    # ── Reset ───────────────────────────────────────────────────────────
-
     def clear(self):
-        self._db.execute("DELETE FROM chunks")
-        self._db.execute("DELETE FROM chunks_fts")
-        self._db.commit()
+        docs = self._store.get(KNOWLEDGE_COLLECTION)
+        if docs and docs.get("ids"):
+            self._store.delete(KNOWLEDGE_COLLECTION, ids=docs["ids"])
