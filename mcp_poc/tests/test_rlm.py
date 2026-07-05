@@ -27,19 +27,29 @@ def make_mock_llm_client(responses):
 
     responses: list of strings, each becomes the content returned by one
                completion() call to the mock LLM.
+
+    The pre-flight ping is auto-answered (not consumed from responses).
     """
     from unittest.mock import AsyncMock, MagicMock
     client = AsyncMock()
     reply_iter = iter(responses)
 
-    async def mock_post(url, **kwargs):
-        content = next(reply_iter)
+    async def success_response(content=""):
         resp = MagicMock()
         resp.raise_for_status = MagicMock()
         resp.json = MagicMock(return_value={
             "message": {"content": content}
         })
         return resp
+
+    async def mock_post(url, **kwargs):
+        body = kwargs.get("json", {})
+        msgs = body.get("messages", [])
+        # Auto-answer pre-flight ping
+        if any(m.get("content") == "ping" for m in msgs):
+            return await success_response("pong")
+        content = next(reply_iter)
+        return await success_response(content)
 
     client.post = mock_post
     return client
@@ -265,7 +275,7 @@ class TestSimpleRLM:
         assert "Max iterations" in result
 
     def test_completion_loop_llm_error(self):
-        """Full RLM loop: root LLM fails."""
+        """Full RLM loop: root LLM fails at iteration (caught by pre-flight ping)."""
         mock_ollama = make_mock_ollama()
         rlm = SimpleRLM(mock_ollama)
         client = AsyncMock()
@@ -273,7 +283,7 @@ class TestSimpleRLM:
         rlm._llm_client = client
         rlm.max_iters = 3
         result = asyncio.run(rlm.completion("test", ""))
-        assert "RLM Error" in result
+        assert "Ollama unreachable" in result
 
     def test_completion_loop_code_extraction(self):
         """Verifies code is extracted from markdown blocks."""

@@ -502,6 +502,27 @@ class SimpleRLM:
         iteration = 0
         print()
 
+        # Pre-flight ping: verify Ollama is responsive before entering the loop
+        if self._llm_client is None:
+            self._llm_client = httpx.AsyncClient(timeout=300)
+        try:
+            ping_resp = await self._llm_client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model_name,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "stream": False,
+                    "options": {"num_ctx": 4096, "temperature": 0},
+                },
+                timeout=httpx.Timeout(15.0),
+            )
+            ping_resp.raise_for_status()
+        except Exception as e:
+            return (
+                f"\n[RLM] Ollama unreachable at {self.base_url} with model '{self.model_name}': {repr(e)}\n"
+                f"  Check: ollama is running, model is pulled, SSH tunnel is active."
+            )
+
         while iteration < self.max_iters:
             iteration += 1
 
@@ -589,9 +610,9 @@ class SimpleRLM:
                 data = resp.json()
                 msg = data.get("message", {})
                 raw_response = msg.get("content", "").strip()
-            except httpx.HTTPError as e:
-                logger.error("Root LLM HTTP call failed: %s", e)
-                return f"\n[RLM Error] Root LLM call failed at iteration {iteration}: {e}"
+            except Exception as e:
+                logger.exception("Root LLM call failed at iteration %d", iteration)
+                return f"\n[RLM Error] Root LLM call failed at iteration {iteration}: {repr(e)}"
 
             code = self._extract_code(raw_response)
 
