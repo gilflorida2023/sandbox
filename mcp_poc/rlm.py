@@ -6,12 +6,14 @@ Loop continues until the model sets final_answer or calls FINAL().
 """
 
 import asyncio
+import ast
 import datetime
 import difflib
 import io
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -79,6 +81,36 @@ TOOL_ALIASES = {
 }
 
 KNOWN_TOOL_NAMES = sorted(TOOL_ALIASES.values())
+
+
+def _fix_call_tool_dicts(code: str) -> str:
+    """Fix missing commas in multi-line call_tool() dict arguments.
+
+    Small models often wrap long dict entries across lines and drop the
+    trailing comma on the first line. This inserts them before exec().
+    """
+    if "call_tool" not in code:
+        return code
+
+    fixed = []
+    for line in code.splitlines():
+        stripped = line.rstrip()
+        if not stripped:
+            fixed.append(stripped)
+            continue
+
+        peek_next = False
+        if fixed:
+            prev = fixed[-1].rstrip()
+            if (prev.endswith('"') or prev.endswith("'") or prev[-1].isdigit()):
+                peek_next = True
+
+        if peek_next and (stripped.startswith('"') or stripped.startswith("'")):
+            fixed[-1] += ","
+
+        fixed.append(stripped)
+
+    return "\n".join(fixed)
 
 
 class _MaxLLMCallsError(RuntimeError):
@@ -527,22 +559,45 @@ class SimpleRLM:
 
             if loop_guide:
                 print(f"  ── Iteration {iteration} ── (loop detected, injecting guidance)")
-                code = loop_guide
-            else:
-                print(f"  ── Iteration {iteration} ──")
-                try:
-                    response = await self.ollama.chat(messages, tools=None)
-                    msg = response.get("message", {})
-                    code = msg.get("content", "").strip()
-                except Exception as e:
-                    logger.error("Root LLM call failed: %s", e)
-                    return f"\n[RLM Error] Root LLM call failed at iteration {iteration}: {e}"
+                last_output += (
+                    f"\n## GUIDANCE\n{loop_guide}\n\n"
+                    "Do NOT output explanations. Output ONLY raw Python code."
+                )
+                continue
 
-                code = self._extract_code(code)
+            print(f"  ── Iteration {iteration} ──")
+            raw_response = ""
+            try:
+                response = await self.ollama.chat(messages, tools=None)
+                msg = response.get("message", {})
+                raw_response = msg.get("content", "").strip()
+            except Exception as e:
+                logger.error("Root LLM call failed: %s", e)
+                return f"\n[RLM Error] Root LLM call failed at iteration {iteration}: {e}"
 
-                if not code:
-                    print("    (empty response, retrying)")
-                    continue
+            code = self._extract_code(raw_response)
+
+            if not code:
+                print("    (empty response, retrying)")
+                continue
+
+            # Fix missing commas in multi-line call_tool dicts
+            fix_applied = _fix_call_tool_dicts(code)
+            if fix_applied != code:
+                print("    (fixed missing commas)")
+                code = fix_applied
+
+            # Pre-validate syntax before exec
+            try:
+                ast.parse(code)
+            except SyntaxError as e:
+                print(f"    ✗ Syntax error: {e.msg} (line {e.lineno})")
+                last_output += (
+                    f"\n## YOUR RAW OUTPUT (last attempt)\n```\n{raw_response}\n```\n"
+                    f"\n## SYNTAX ERROR\n{e.msg} (line {e.lineno})\n\n"
+                    "Fix the syntax. Each call_tool() on ONE line — do NOT split dicts across lines."
+                )
+                continue
 
             print(f"    {_shorten_code(code)}")
             logger.info("RLM iteration %d/%d: %d chars, %d tool calls, %d LLM calls",
