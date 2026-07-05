@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 CGI_BASE = Path("/home/scout/projects/sandbox/scout/cgi-bin/mcp/tools")
 TOOL_LOG_PATH = Path(config.workspace.path) / ".session-log" / "rlm_tool_calls.jsonl"
+SSH_RESTART_HOST = "192.168.0.7"
 
 
 def _safe_import(name, *args, **kwargs):
@@ -506,6 +507,7 @@ class SimpleRLM:
         if self._llm_client is None:
             self._llm_client = httpx.AsyncClient(timeout=config.ollama.timeout)
         print("  (pinging Ollama — waiting for model to load...)")
+        ping_ok = False
         try:
             ping_resp = await self._llm_client.post(
                 f"{self.base_url}/api/chat",
@@ -518,11 +520,57 @@ class SimpleRLM:
                 timeout=httpx.Timeout(120.0),
             )
             ping_resp.raise_for_status()
+            ping_ok = True
         except Exception as e:
-            return (
-                f"\n[RLM] Ollama unreachable at {self.base_url} with model '{self.model_name}': {repr(e)}\n"
-                f"  Check: ollama is running, model is pulled, SSH tunnel is active."
-            )
+            # Distinguish "completely down" vs "stale" (tags OK, chat fails)
+            try:
+                tags_resp = await self._llm_client.get(
+                    f"{self.base_url}/api/tags", timeout=httpx.Timeout(5.0)
+                )
+                tags_ok = tags_resp.status_code == 200
+            except Exception:
+                tags_ok = False
+
+            if tags_ok:
+                print("  (Ollama stale — restarting via SSH...)")
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "ssh", f"m4@{SSH_RESTART_HOST}",
+                        "export PATH=/usr/local/bin:/Applications/Ollama.app/Contents/Resources:$PATH && "
+                        "pkill -9 ollama 2>/dev/null; sleep 2; "
+                        "ollama serve &>/dev/null &",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await asyncio.wait_for(proc.wait(), timeout=15)
+                    await asyncio.sleep(3)
+                    # Retry ping
+                    ping_retry = await self._llm_client.post(
+                        f"{self.base_url}/api/chat",
+                        json={
+                            "model": self.model_name,
+                            "messages": [{"role": "user", "content": "ping"}],
+                            "stream": False,
+                            "options": {"num_ctx": 4096, "temperature": 0},
+                        },
+                        timeout=httpx.Timeout(120.0),
+                    )
+                    ping_retry.raise_for_status()
+                    ping_ok = True
+                    print("  (restart OK)")
+                except Exception as restart_e:
+                    return (
+                        f"\n[RLM] Ollama stale — restart failed: {repr(restart_e)}\n"
+                        f"  Try manually on Mac: pkill -9 ollama && ollama serve"
+                    )
+            else:
+                return (
+                    f"\n[RLM] Ollama unreachable at {self.base_url} with model '{self.model_name}': {repr(e)}\n"
+                    f"  Check: ollama is running, model is pulled, SSH tunnel is active."
+                )
+
+        if not ping_ok:
+            return f"\n[RLM] Ping failed — cannot proceed."
 
         while iteration < self.max_iters:
             iteration += 1
