@@ -23,6 +23,7 @@
 
 ### Operational Notes
 - Ollama runs locally at localhost:11434. All models are pre-pulled.
+- `ollama stop <model>` unloads a model from GPU memory after each loop iteration (already in loop.sh). Run manually after any ad-hoc `ollama run`.
 - Primary coding model: qwen3:0.6b (simplesieve 1.43s, native tools 4.46s — fastest in both benchmarks)
 - Fast fallback model: qwen3:1.7b (simplesieve 5s, native tools 7s — more reliable instruction following)
 - Plan/analysis model: qwen2.5:7b (simplesieve 21s, native tools 7s — reliable multi-step planning)
