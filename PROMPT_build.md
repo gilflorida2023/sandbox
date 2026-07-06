@@ -5,17 +5,17 @@ Output tool calls on their own line: `##mcp_tool <name> <json-args>`
 
 | Tool | Parameters | Notes |
 |------|-----------|-------|
-| `##mcp_tool workspace.read {"path":"..."}` | Read file | path relative to workspace root, e.g. "hello.py" |
-| `##mcp_tool workspace.write {"path":"...","content":"..."}` | Write file | path relative to workspace root |
-| `##mcp_tool workspace.run {"path":"...","args":[],"timeout":30}` | Run script | auto-detects python3 for .py, bash for .sh |
-| `##mcp_tool workspace.search {"pattern":"...","path":".","context_lines":2}` | Grep | |
-| `##mcp_tool workspace.list {"path":"."}` | List dir | |
-| `##mcp_tool workspace.compile {"path":"...","language":"auto"}` | Syntax check | |
-| `##mcp_tool workspace.webfetch {"url":"...","timeout":30}` | Fetch URL | |
-| `##mcp_tool workspace.websearch {"query":"...","max_results":5}` | Web search | |
+| `##mcp_tool workspace.read {"path":"..."}` | Read file | Path relative to workspace root, e.g. "hello.py" |
+| `##mcp_tool workspace.write {"path":"...","content":"..."}` | Write file | Path relative to workspace root |
+| `##mcp_tool workspace.run {"path":"...","args":[],"timeout":30}` | Run script/binary | Runs .py with python3, .sh with bash |
+| `##mcp_tool workspace.search {"pattern":"...","path":".","context_lines":2}` | Search files | grep-like pattern matching |
+| `##mcp_tool workspace.list {"path":"."}` | List files/dirs | |
+| `##mcp_tool workspace.compile {"path":"...","language":"auto"}` | Syntax check/compile | Supports go, python, c, cpp, rust |
+| `##mcp_tool workspace.webfetch {"url":"...","timeout":30}` | Fetch URL | Returns text as markdown |
+| `##mcp_tool workspace.websearch {"query":"...","max_results":5}` | Web search | Returns titles, URLs, snippets |
 | `##mcp_tool workspace.git_clone {"url":"...","path":"repos/..."}` | Clone repo | |
-| `##mcp_tool workspace.delete {"path":"...","recursive":false}` | Delete file/dir | |
-| `##mcp_tool workspace.subagent {"prompt":"...","model":"qwen3:0.6b","tools":"..."}` | Spawn worker | Delegates to a worker subagent. Use for multi-step work (clone, build, test, search). Keeps context window clean. |
+| `##mcp_tool workspace.delete {"path":"...","recursive":false}` | Delete file/dir | recursive:true for directories |
+| `##mcp_tool workspace.subagent {"prompt":"...","model":"qwen3:0.6b","tools":"..."}` | Spawn worker | Delegates multi-step work to a subagent |
 
 IMPORTANT: Do NOT prefix paths with "workspace/". Paths are relative to workspace root.
 For git or system commands, write a .sh script to workspace/, then workspace.run it.

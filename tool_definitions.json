@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "workspace.read",
-      "description": "Read a file from the workspace root directory. Path is relative to workspace root, e.g. \"calc.py\" not \"workspace/calc.py\".",
+      "description": "Read a file. Path is relative to workspace root, e.g. \"calc.py\" not \"workspace/calc.py\".",
       "parameters": {
         "type": "object",
         "properties": {
@@ -32,7 +32,7 @@
     "type": "function",
     "function": {
       "name": "workspace.list",
-      "description": "List files and directories in the workspace. Pass \".\" to list the root.",
+      "description": "List files and directories. Use \".\" to list the root.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -45,11 +45,11 @@
     "type": "function",
     "function": {
       "name": "workspace.run",
-      "description": "Execute a script or binary. For .py files runs with python3, for .sh runs with bash. Path is relative to workspace root.",
+      "description": "Execute a script or binary. Runs .py files with python3, .sh files with bash.",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {"type": "string", "description": "Path to script/binary relative to workspace root"},
+          "path": {"type": "string", "description": "Path to script or binary relative to workspace root"},
           "args": {"type": "array", "items": {"type": "string"}, "description": "Command-line arguments"},
           "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 30}
         },
@@ -68,7 +68,7 @@
           "pattern": {"type": "string", "description": "Regex pattern to search"},
           "path": {"type": "string", "description": "Directory to search in, relative to workspace root", "default": "."},
           "file_pattern": {"type": "string", "description": "Glob pattern to filter files (e.g. *.py)"},
-          "context_lines": {"type": "integer", "description": "Lines of context around matches", "default": 2}
+          "context_lines": {"type": "integer", "description": "Context lines per match", "default": 2}
         },
         "required": ["pattern"]
       }
@@ -122,20 +122,6 @@
   {
     "type": "function",
     "function": {
-      "name": "wiki.lookup",
-      "description": "Look up tool documentation from the wiki.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "topic": {"type": "string", "description": "Topic to look up"}
-        },
-        "required": ["topic"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "workspace.git_clone",
       "description": "Clone a git repository. Path is a subdirectory within the workspace root.",
       "parameters": {
@@ -167,7 +153,7 @@
     "type": "function",
     "function": {
       "name": "workspace.subagent",
-      "description": "Spawn a worker subagent to perform a task. Worker runs independently using a smaller model and returns a summary. Use for searching, cloning, building, testing — anything multi-step that would consume context window.",
+      "description": "Spawn a worker subagent. Worker runs independently and returns a summary of results. Use for searching, cloning, building, testing — anything multi-step that would bloat context window.",
       "parameters": {
         "type": "object",
         "properties": {
