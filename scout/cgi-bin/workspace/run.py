@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Simple and effective runner for Go binaries and other executables."""
 import json
+import os
 import sys
 import subprocess
 from pathlib import Path
@@ -29,9 +30,24 @@ def main():
         print(json.dumps({'success': False, 'error': 'Path outside workspace'}))
         sys.exit(1)
 
+    # Auto-detect interpreter for non-executable scripts
+    interpreter = None
+    if not os.access(full_path, os.X_OK):
+        ext = full_path.suffix.lower()
+        if ext == '.py':
+            interpreter = 'python3'
+        elif ext == '.sh':
+            interpreter = 'bash'
+        elif ext == '.pl':
+            interpreter = 'perl'
+        elif ext == '.rb':
+            interpreter = 'ruby'
+        elif ext == '.js':
+            interpreter = 'node'
+    cmd = [interpreter, str(full_path)] if interpreter else [str(full_path)]
     try:
         result = subprocess.run(
-            [str(full_path)] + cmd_args,
+            cmd + cmd_args,
             capture_output=True,
             text=True,
             timeout=timeout

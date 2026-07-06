@@ -6,7 +6,9 @@ scout:
 ollama:
   host: "localhost"
   port: 11434
-  model: "qwen3:0.6b"
+  model: "qwen2.5-coder:3b"
+  plan_model: "qwen3:1.7b"
+  heavy_model: "qwen2.5-coder:7b"
   timeout: 600
 
 workspace:
