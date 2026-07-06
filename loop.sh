@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ralph loop — multi-turn tool calling via ralph_agent.py.
-# Each loop iteration: one full cycle of LLM thinking + tool execution.
-# The agent handles one Ollama turn at a time; loop.sh manages conversation state.
+# Ralph loop — pure bash pipe. Each iteration feeds PROMPT + plan + specs + AGENTS.md
+# to ralph_agent.py, which handles its own inner tool-calling loop.
+# When the model produces text (no more tool calls), the iteration is done.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SELF_DIR"
@@ -24,115 +24,50 @@ if [ "$MODE" = "plan" ]; then
     export LLM_BUILD_MODEL="${LLM_PLAN_MODEL:-qwen2.5:7b}"
 else
     PROMPT_FILE="PROMPT_build.md"
-    export LLM_BUILD_MODEL="${LLM_BUILD_MODEL:-qwen3:0.6b}"
+    export LLM_BUILD_MODEL="${LLM_BUILD_MODEL:-qwen2.5:7b}"
 fi
+
+export RALPH_TEXT_ONLY=1
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Ralph Loop — $(date)"
 echo " Mode:       $MODE"
-echo " Model:      $LLM_BUILD_MODEL"
+echo " Root model: $LLM_BUILD_MODEL"
 echo " Prompt:     $PROMPT_FILE"
 echo " Max iters:  $MAX_ITERATIONS"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 [ ! -f "$PROMPT_FILE" ] && { echo "Error: $PROMPT_FILE not found"; exit 1; }
 
-# Build initial user message
-USER_MSG=$(cat "$PROMPT_FILE")
-if [ -f "workspace/IMPLEMENTATION_PLAN.md" ] && [ -s "workspace/IMPLEMENTATION_PLAN.md" ]; then
-    USER_MSG="$USER_MSG"$'\n\n## Current Implementation Plan\n'"$(cat workspace/IMPLEMENTATION_PLAN.md)"
-fi
-if [ -f "AGENTS.md" ] && [ -s "AGENTS.md" ]; then
-    USER_MSG="$USER_MSG"$'\n\n## Project Context\n'"$(cat AGENTS.md)"
-fi
+while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
+    echo ""
+    echo "[Ralph] Iteration $((ITERATION + 1))..."
 
-# Initialize conversation as JSON
-CONVERSATION=$(python3 -c "
-import json, sys
-sys.stdout.write(json.dumps([{'role': 'user', 'content': sys.stdin.read()}]))
-" <<< "$USER_MSG")
-
-while true; do
-    [ "$MAX_ITERATIONS" -gt 0 ] && [ "$ITERATION" -ge "$MAX_ITERATIONS" ] && break
-
-    echo "[Ralph] Iteration $((ITERATION + 1)) — $LLM_BUILD_MODEL..."
-
-    # Inner loop: keep calling agent until it produces text (no tool calls)
-    MAX_INNER=20
-    INNER=0
-    FINAL_TEXT=""
-    AGENT_CONV="$CONVERSATION"
-
-    while [ "$INNER" -lt "$MAX_INNER" ]; do
-        NEW_CONV=$(echo "$AGENT_CONV" | python3 ralph_agent.py 2>/tmp/agent_err.log) || {
-            echo "[Ralph] Agent error:"; cat /tmp/agent_err.log; exit 1
-        }
-
-        # Check if the last message has content (text) and no new tool calls
-        LAST=$(echo "$NEW_CONV" | python3 -c "
-import json, sys
-conv = json.load(sys.stdin)
-last = conv[-1] if conv else {}
-is_tool = last.get('role') == 'tool'
-content = last.get('content', '')
-if last.get('role') == 'assistant' and content:
-    print('TEXT:' + content[:500])
-elif last.get('role') == 'assistant' and last.get('tool_calls'):
-    print('TOOLS')
-elif is_tool:
-    print('TOOL_RESULT')
-else:
-    print('UNKNOWN')
-")
-
-        AGENT_CONV="$NEW_CONV"
-
-        case "$LAST" in
-            TEXT:*)
-                FINAL_TEXT="${LAST#TEXT:}"
-                break
-                ;;
-            TOOLS)
-                # Continue inner loop — more tool calls to process
-                INNER=$((INNER + 1))
-                continue
-                ;;
-            TOOL_RESULT)
-                # Tool result means we need another assistant turn
-                INNER=$((INNER + 1))
-                continue
-                ;;
-            *)
-                # Model produced no tool calls but also no text?
-                # Could be the model is done
-                FINAL_TEXT=$(echo "$NEW_CONV" | python3 -c "
-import json, sys
-conv = json.load(sys.stdin)
-for m in reversed(conv):
-    if m.get('role') == 'assistant' and m.get('content'):
-        print(m['content'][:500])
-        break
-")
-                break
-                ;;
-        esac
-    done
-
-    if [ -n "$FINAL_TEXT" ]; then
-        echo "---"
-        echo "$FINAL_TEXT"
-        echo "---"
-    else
-        echo "[Ralph] No text produced (all tool calls)"
-    fi
-
-    # Update conversation for next outer iteration (keep the history)
-    CONVERSATION="$AGENT_CONV"
+    {
+        cat "$PROMPT_FILE"
+        echo ""
+        if [ -f "workspace/IMPLEMENTATION_PLAN.md" ] && [ -s "workspace/IMPLEMENTATION_PLAN.md" ]; then
+            echo "## IMPLEMENTATION_PLAN.md"
+            cat workspace/IMPLEMENTATION_PLAN.md
+            echo ""
+        fi
+        if [ -f "AGENTS.md" ] && [ -s "AGENTS.md" ]; then
+            echo "## AGENTS.md"
+            cat AGENTS.md
+            echo ""
+        fi
+    } | python3 ralph_agent.py 2>/tmp/ralph_err.log || {
+        echo "[Ralph] Agent error:"
+        tail -5 /tmp/ralph_err.log
+        exit 1
+    }
 
     ITERATION=$((ITERATION + 1))
-    echo -e "\n━━━━━━━━━━━ LOOP $ITERATION COMPLETE ━━━━━━━━━━━\n"
+    echo ""
+    echo "━━━━━━━━━━━ LOOP $ITERATION COMPLETE ━━━━━━━━━━━"
 done
 
+echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Loop finished after $ITERATION iterations"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

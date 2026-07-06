@@ -162,5 +162,21 @@
         "required": ["path"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.subagent",
+      "description": "Spawn a worker subagent to perform a task. Worker runs independently using a smaller model and returns a summary. Use for searching, cloning, building, testing — anything multi-step that would consume context window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {"type": "string", "description": "Task for the subagent to perform"},
+          "model": {"type": "string", "description": "Worker model (default: qwen3:0.6b)", "default": "qwen3:0.6b"},
+          "tools": {"type": "string", "description": "Comma-separated allowed tools (default: all)", "default": "workspace.read,workspace.write,workspace.run,workspace.search,workspace.list,workspace.git_clone,workspace.compile,workspace.delete,workspace.webfetch,workspace.websearch"}
+        },
+        "required": ["prompt"]
+      }
+    }
   }
 ]

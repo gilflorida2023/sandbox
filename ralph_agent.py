@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Ralph agent — single-turn Ollama tool caller.
-Reads conversation JSON from stdin, sends to Ollama with tools,
-executes any tool_calls, outputs updated conversation JSON on stdout.
+Ralph agent — stateless Ollama tool caller with built-in inner loop.
+Reads prompt from stdin (plain text or JSON messages), sends to Ollama with tools,
+loops internally executing tool calls until the model produces text, then outputs it.
 
-Input:  JSON array of messages (conversation)
-Output: JSON array of messages (conversation + assistant reply + tool results)
+Input:  plain text prompt OR JSON array of messages
+Output: JSON array of messages (default) or final text (--text flag)
 """
 import json, os, re, subprocess, sys, urllib.request
 
@@ -13,13 +13,15 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL = os.environ.get("LLM_BUILD_MODEL", "qwen3:0.6b")
 TOOLS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_definitions.json")
 MCP_TOOL_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_tool.sh")
+MAX_INNER = 20
 
 def load_tools():
     with open(TOOLS_FILE) as f:
         d = json.load(f)
     for t in d:
-        if "type" in t.get("function", {}):
-            del t["function"]["type"]
+        fn = t.get("function", {})
+        if "type" in fn:
+            del fn["type"]
     return d
 
 def call_ollama(messages, tools):
@@ -45,7 +47,6 @@ def extract_tool_calls(msg):
     if tcs:
         return tcs, content
 
-    # Strip markdown fences
     text = content.strip()
     for fence in ["```json\n", "```\n", "```"]:
         text = text.replace(fence, "")
@@ -58,8 +59,6 @@ def extract_tool_calls(msg):
         line = line.strip()
         if not line:
             continue
-
-        # Try JSON object per line
         try:
             obj = json.loads(line)
             if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
@@ -81,7 +80,6 @@ def extract_tool_calls(msg):
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Try ##mcp_tool format
         m = re.match(r"##mcp_tool\s+(\S+)\s+(.*)", line)
         if m:
             args_s = m.group(2).strip()
@@ -121,11 +119,14 @@ def run_tool(tc):
         return json.dumps({"error": f"tool {name} failed: {e}", "retryable": True})
 
 def main():
+    TEXT_ONLY = "--text" in sys.argv or os.environ.get("RALPH_TEXT_ONLY") == "1"
+
     inp = sys.stdin.read().strip()
     if not inp:
         inp = os.environ.get("RALPH_PROMPT", "")
     if not inp:
         sys.stderr.write("No input\n"); sys.exit(1)
+
     try:
         messages = json.loads(inp)
         if not isinstance(messages, list):
@@ -134,20 +135,28 @@ def main():
         messages = [{"role": "user", "content": inp}]
 
     tools = load_tools()
-    msg = call_ollama(messages, tools)
-    tcs, content = extract_tool_calls(msg)
 
-    # Append assistant message
-    messages.append(msg)
+    for _ in range(MAX_INNER):
+        msg = call_ollama(messages, tools)
+        tcs, content = extract_tool_calls(msg)
 
-    # Execute tool calls and append results
-    for tc in tcs:
-        out = run_tool(tc)
-        tc_id = tc.get("id", f"call_{tcs.index(tc)}")
-        messages.append({"role": "tool", "content": out, "tool_call_id": tc_id})
+        messages.append(msg)
 
-    sys.stdout.write(json.dumps(messages))
-    sys.stdout.flush()
+        if not tcs:
+            if TEXT_ONLY:
+                sys.stdout.write(content)
+            else:
+                sys.stdout.write(json.dumps(messages))
+            sys.stdout.flush()
+            return
+
+        for tc in tcs:
+            out = run_tool(tc)
+            tc_id = tc.get("id", f"call_{tcs.index(tc)}")
+            messages.append({"role": "tool", "content": out, "tool_call_id": tc_id})
+
+    sys.stderr.write("Max inner iterations reached\n")
+    sys.exit(1)
 
 if __name__ == "__main__":
     main()
