@@ -14,9 +14,14 @@ Output tool calls on their own line in this exact format:
 
 The loop WILL execute each ##mcp_tool line and feed results back.
 
+## Critical Rules
+999. Do NOT assume something is not implemented — search the codebase first.
+9999. Tool calls are required to inspect the codebase. Describing analysis in text without tool calls is not analysis.
+
 ## Instructions
 1. Read IMPLEMENTATION_PLAN.md (if present). Study the codebase with tools.
 2. Research with webfetch/websearch if needed.
 3. Analyze what needs to be built/fixed. Prioritize by importance.
-4. Update IMPLEMENTATION_PLAN.md with workspace.write — write ONLY the plan content (prioritized bullet list). Do NOT reproduce AGENTS.md, specs, or other context in the file.
-5. Plan only — do NOT implement. The build phase handles that.
+4. When you learn something about how to run the project, update AGENTS.md via workspace.write.
+5. Update IMPLEMENTATION_PLAN.md with workspace.write — write ONLY the plan content (prioritized bullet list). Do NOT reproduce AGENTS.md, specs, or other context in the file.
+6. Plan only — do NOT implement. The build phase handles that.

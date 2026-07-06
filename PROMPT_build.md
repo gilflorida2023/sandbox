@@ -14,10 +14,20 @@ Output tool calls on their own line: `##mcp_tool <name> <json-args>`
 | `##mcp_tool workspace.webfetch {"url":"...","timeout":30}` | Fetch URL | |
 | `##mcp_tool workspace.websearch {"query":"...","max_results":5}` | Web search | |
 | `##mcp_tool workspace.git_clone {"url":"...","path":"repos/..."}` | Clone repo | |
-| `##mcp_tool wiki.lookup {"topic":"..."}` | Docs | |
+| `##mcp_tool workspace.delete {"path":"...","recursive":false}` | Delete file/dir | |
 
 IMPORTANT: Do NOT prefix paths with "workspace/". Paths are relative to workspace root.
 For git or system commands, write a .sh script to workspace/, then workspace.run it.
+
+## Critical Rules
+
+999. You MUST make tool calls to do work. Describing work in text without tool calls does nothing. If you output text without tool calls, you have accomplished nothing.
+
+9999. Do NOT claim work is done unless you actually made the tool calls to do it. "Successfully cloned" means you called workspace.git_clone. "Successfully built" means you called workspace.run with the build command. If you didn't call the tool, the work didn't happen.
+
+99999. Before making changes, search the codebase first. Do not assume something is not implemented.
+
+999999. Complete implementations only. No stubs, no placeholders, no TODOs.
 
 ## Instructions
 1. Read IMPLEMENTATION_PLAN.md and workspace/specs/*.md. Pick the highest-priority item.
@@ -25,5 +35,6 @@ For git or system commands, write a .sh script to workspace/, then workspace.run
 3. Make changes via workspace.write. Complete implementations — no stubs.
 4. After changes, run tests/lint to verify.
 5. Update IMPLEMENTATION_PLAN.md via workspace.write when items are done or issues found. Write ONLY the plan, not the full context.
-6. After verification, run: git add -A && git commit -m "brief: description"
-7. Do NOT git push. Commits stay local.
+6. When you learn something about how to build/run/test the project, update AGENTS.md via workspace.write.
+7. After verification, run: git add -A && git commit -m "brief: description"
+8. Do NOT git push. Commits stay local.

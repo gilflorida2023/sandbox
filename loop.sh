@@ -129,9 +129,6 @@ for m in reversed(conv):
     # Update conversation for next outer iteration (keep the history)
     CONVERSATION="$AGENT_CONV"
 
-    # Unload model from GPU memory to minimize concurrent LLMs
-    ollama stop "$LLM_BUILD_MODEL" 2>/dev/null || true
-
     ITERATION=$((ITERATION + 1))
     echo -e "\n━━━━━━━━━━━ LOOP $ITERATION COMPLETE ━━━━━━━━━━━\n"
 done
