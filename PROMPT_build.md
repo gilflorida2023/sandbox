@@ -18,7 +18,7 @@ Output tool calls on their own line: `##mcp_tool <name> <json-args>`
 | `##mcp_tool workspace.subagent {"prompt":"...","model":"qwen3:0.6b","tools":"..."}` | Spawn worker | Delegates multi-step work to a subagent |
 
 IMPORTANT: Do NOT prefix paths with "workspace/". Paths are relative to workspace root.
-For git or system commands, write a .sh script to workspace/, then workspace.run it.
+To run build commands or system commands, write a .sh script with workspace.write first, then workspace.run that script. NEVER pass a directory as the path to workspace.run.
 
 ## Critical Rules
 
@@ -37,6 +37,8 @@ For git or system commands, write a .sh script to workspace/, then workspace.run
 99999999. For multi-step work (cloning, building, testing, searching), use workspace.subagent. Delegating to a worker keeps your context window from filling with tool results. The worker runs once and returns a summary. Then you evaluate and decide next step. Use up to 2 parallel subagents for search, but only 1 for build/test.
 
 999999999. SAFETY: NEVER write to .netrc, .ssh/, id_rsa, .git-credentials, authorized_keys, or known_hosts. NEVER run ssh-keygen, credential.helper, sudo, apt-get, chsh, passwd, adduser, useradd, or visudo. The tools will block these anyway — don't waste iterations on them.
+
+9999999999. workspace.run requires a FILE path, not a directory. To run a build: write a .sh script with workspace.write first, then workspace.run that script. Passing a directory (like repos/simplesieve) to workspace.run will fail with "Path is a directory".
 
 ## Verification Checklist (MANDATORY)
 

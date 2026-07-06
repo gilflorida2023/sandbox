@@ -31,7 +31,13 @@ def main():
         sys.exit(1)
 
     if not full_path.exists():
-        print(json.dumps({'success': False, 'error': f'File not found or not executable: {path}'}))
+        error_msg = f'File not found: {path}. Is it a directory? Use workspace.list to see available files, then workspace.write to create a script.'
+        print(json.dumps({'success': False, 'error': error_msg}))
+        sys.exit(1)
+
+    if full_path.is_dir():
+        error_msg = f'Path is a directory: {path}. Directories cannot be executed. Write a build script with workspace.write, then workspace.run that script.'
+        print(json.dumps({'success': False, 'error': error_msg}))
         sys.exit(1)
 
     # Scan script content for dangerous commands

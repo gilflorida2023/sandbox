@@ -8,7 +8,6 @@ set -euo pipefail
 #   mcp_tool.sh workspace.write '{"path":"test.txt","content":"hello"}'
 #   mcp_tool.sh workspace.run '{"path":"test.py","timeout":10}'
 #   mcp_tool.sh workspace.search '{"pattern":"main"}'
-#   mcp_tool.sh wiki.lookup '{"topic":"webfetch"}'
 #   mcp_tool.sh workspace.webfetch '{"url":"https://example.com"}'
 
 TOOL_NAME="${1:?Usage: mcp_tool.sh <tool_name> [json_args]}"
@@ -26,10 +25,10 @@ case "$TOOL_NAME" in
     workspace.build)    script="$CGI_DIR/build.py" ;;
     workspace.run)      script="$CGI_DIR/run.py" ;;
     workspace.search)   script="$CGI_DIR/search.py" ;;
-    wiki.lookup)        script="$CGI_DIR/wiki_lookup.py" ;;
     workspace.webfetch) script="$CGI_DIR/webfetch.py" ;;
     workspace.websearch) script="$CGI_DIR/websearch.py" ;;
     workspace.git_clone) script="$CGI_DIR/git_clone.py" ;;
+    workspace.subagent)  script="$CGI_DIR/subagent.py" ;;
     *)
         echo "{\"success\":false,\"error\":\"Unknown tool: $TOOL_NAME\"}"
         exit 1
