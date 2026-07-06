@@ -23,7 +23,11 @@ for arg in "$@"; do
 done
 
 if [ "$CLEAN" = true ]; then
-    echo "[Ralph] --clean: resetting workspace/repos/ and IMPLEMENTATION_PLAN.md"
+    echo "[Ralph] --clean: unloading stale models, resetting workspace/repos/ and IMPLEMENTATION_PLAN.md"
+    ollama ps 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r model; do
+        echo "  Unloading $model"
+        ollama stop "$model" 2>/dev/null || true
+    done
     rm -rf workspace/repos/*
     cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
 # Implementation Plan
