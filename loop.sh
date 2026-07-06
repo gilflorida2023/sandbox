@@ -13,11 +13,13 @@ MAX_ITERATIONS=20
 ITERATION=0
 
 CLEAN=false
+VERBOSE=false
 
 for arg in "$@"; do
     case "$arg" in
         plan) MODE="plan" ;;
         --clean) CLEAN=true ;;
+        -v|--verbose) VERBOSE=true ;;
         [0-9]*) MAX_ITERATIONS="$arg" ;;
     esac
 done
@@ -49,6 +51,7 @@ else
 fi
 
 export RALPH_TEXT_ONLY=1
+[ "$VERBOSE" = true ] && export RALPH_VERBOSE=1
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Ralph Loop — $(date)"
@@ -56,6 +59,7 @@ echo " Mode:       $MODE"
 echo " Root model: $LLM_BUILD_MODEL"
 echo " Prompt:     $PROMPT_FILE"
 echo " Max iters:  $MAX_ITERATIONS"
+echo " Verbose:    $VERBOSE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 [ ! -f "$PROMPT_FILE" ] && { echo "Error: $PROMPT_FILE not found"; exit 1; }
@@ -77,10 +81,13 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
             cat AGENTS.md
             echo ""
         fi
-    } | python3 ralph_agent.py 2>/tmp/ralph_err.log || {
-        echo "[Ralph] Agent error:"
-        tail -5 /tmp/ralph_err.log
-        exit 1
+    } | python3 ralph_agent.py || {
+        exit_code=$?
+        echo "[Ralph] Agent exited ($exit_code) — logging to plan, continuing"
+        echo "" >> workspace/IMPLEMENTATION_PLAN.md
+        echo "## Previous iteration error (exit $exit_code)" >> workspace/IMPLEMENTATION_PLAN.md
+        echo "The last agent run failed. The plan may need adjustment." >> workspace/IMPLEMENTATION_PLAN.md
+        sleep 1
     }
 
     ITERATION=$((ITERATION + 1))

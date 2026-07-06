@@ -7,13 +7,20 @@ loops internally executing tool calls until the model produces text, then output
 Input:  plain text prompt OR JSON array of messages
 Output: JSON array of messages (default) or final text (--text flag)
 """
-import json, os, re, subprocess, sys, urllib.request
+import json, os, re, subprocess, sys, time, urllib.request
+from datetime import datetime
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL = os.environ.get("LLM_BUILD_MODEL", "qwen3:0.6b")
 TOOLS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_definitions.json")
 MCP_TOOL_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_tool.sh")
 MAX_INNER = 20
+VERBOSE = "--verbose" in sys.argv or "-v" in sys.argv or os.environ.get("RALPH_VERBOSE") == "1"
+
+def vlog(*args):
+    if VERBOSE:
+        t = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[v] {t}", *args, file=sys.stderr, flush=True)
 
 def load_tools():
     with open(TOOLS_FILE) as f:
@@ -32,10 +39,15 @@ def call_ollama(messages, tools):
     req = urllib.request.Request(f"{OLLAMA_HOST}/api/chat", data=payload,
         headers={"Content-Type": "application/json"}, method="POST")
     try:
+        start = time.time()
         with urllib.request.urlopen(req, timeout=300) as resp:
-            return json.loads(resp.read()).get("message", {})
+            result = json.loads(resp.read()).get("message", {})
+        vlog(f"Ollama ({time.time()-start:.1f}s)")
+        return result
     except Exception as e:
-        sys.stderr.write(f"Ollama error: {e}\n"); sys.exit(1)
+        msg = f"Ollama error: {e}"
+        sys.stderr.write(msg + "\n")
+        sys.exit(1)
 
 def normalize(name):
     name = name.lstrip("/")
@@ -99,7 +111,7 @@ def extract_tool_calls(msg):
         return calls, "\n".join(rest_lines)
     return [], content
 
-def run_tool(tc):
+def run_tool(tc, it):
     fn = tc.get("function", {})
     name = fn.get("name", "")
     args = fn.get("arguments", {})
@@ -108,14 +120,21 @@ def run_tool(tc):
             args = json.loads(args)
         except json.JSONDecodeError:
             args = {}
-    sys.stderr.write(f"[tool] {name}\n")
+    vlog(f"iter {it} tool: {name} {json.dumps(args)[:300]}")
+    start = time.time()
     try:
         r = subprocess.run(["bash", MCP_TOOL_SH, name, json.dumps(args)],
             capture_output=True, text=True, timeout=60)
-        return r.stdout.strip() or json.dumps({"error": r.stderr.strip() or "no output"})
+        elapsed = time.time() - start
+        result = r.stdout.strip() or json.dumps({"error": r.stderr.strip() or "no output"})
+        vlog(f"iter {it} result ({elapsed:.1f}s): {result[:200]}")
+        return result
     except subprocess.TimeoutExpired:
+        elapsed = time.time() - start
+        vlog(f"iter {it} TIMEOUT ({elapsed:.1f}s)")
         return json.dumps({"error": f"tool {name} timed out after 60s", "retryable": True})
     except Exception as e:
+        vlog(f"iter {it} FAILED: {e}")
         return json.dumps({"error": f"tool {name} failed: {e}", "retryable": True})
 
 def main():
@@ -125,7 +144,8 @@ def main():
     if not inp:
         inp = os.environ.get("RALPH_PROMPT", "")
     if not inp:
-        sys.stderr.write("No input\n"); sys.exit(1)
+        sys.stderr.write("No input\n")
+        sys.exit(1)
 
     try:
         messages = json.loads(inp)
@@ -135,10 +155,21 @@ def main():
         messages = [{"role": "user", "content": inp}]
 
     tools = load_tools()
+    vlog(f"Model: {MODEL}, tools: {len(tools)}, text_only: {TEXT_ONLY}")
 
-    for _ in range(MAX_INNER):
+    for inner in range(MAX_INNER):
+        it = inner + 1
+        vlog(f"iter {it} → Ollama ({len(messages)} messages)")
         msg = call_ollama(messages, tools)
         tcs, content = extract_tool_calls(msg)
+
+        if tcs:
+            for tc in tcs:
+                n = tc.get("function", {}).get("name", "?")
+                a = tc.get("function", {}).get("arguments", {})
+                vlog(f"iter {it} ← tool: {n} {json.dumps(a)[:200]}")
+        else:
+            vlog(f"iter {it} ← text ({len(content)} chars)")
 
         messages.append(msg)
 
@@ -151,11 +182,20 @@ def main():
             return
 
         for tc in tcs:
-            out = run_tool(tc)
+            out = run_tool(tc, it)
             tc_id = tc.get("id", f"call_{tcs.index(tc)}")
             messages.append({"role": "tool", "content": out, "tool_call_id": tc_id})
 
     sys.stderr.write("Max inner iterations reached\n")
+    sys.stderr.write("Last messages:\n")
+    for m in messages[-5:]:
+        role = m.get("role", "?")
+        if m.get("tool_calls"):
+            sys.stderr.write(f"  [{role}] tool_calls: {json.dumps(m['tool_calls'])[:200]}\n")
+        elif m.get("content", ""):
+            sys.stderr.write(f"  [{role}] {m['content'][:300]}\n")
+        else:
+            sys.stderr.write(f"  [{role}] (no content)\n")
     sys.exit(1)
 
 if __name__ == "__main__":
