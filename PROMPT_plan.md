@@ -18,5 +18,5 @@ The loop WILL execute each ##mcp_tool line and feed results back.
 1. Read IMPLEMENTATION_PLAN.md (if present). Study the codebase with tools.
 2. Research with webfetch/websearch if needed.
 3. Analyze what needs to be built/fixed. Prioritize by importance.
-4. Update IMPLEMENTATION_PLAN.md with workspace.write — prioritized bullet list of remaining work. Name exact files and changes.
+4. Update IMPLEMENTATION_PLAN.md with workspace.write — write ONLY the plan content (prioritized bullet list). Do NOT reproduce AGENTS.md, specs, or other context in the file.
 5. Plan only — do NOT implement. The build phase handles that.

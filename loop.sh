@@ -21,10 +21,10 @@ done
 
 if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="PROMPT_plan.md"
-    export LLM_BUILD_MODEL="${LLM_PLAN_MODEL:-qwen3:1.7b}"
+    export LLM_BUILD_MODEL="${LLM_PLAN_MODEL:-qwen2.5:7b}"
 else
     PROMPT_FILE="PROMPT_build.md"
-    export LLM_BUILD_MODEL="${LLM_BUILD_MODEL:-qwen2.5-coder:7b}"
+    export LLM_BUILD_MODEL="${LLM_BUILD_MODEL:-qwen3:0.6b}"
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

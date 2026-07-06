@@ -10,7 +10,7 @@ Output: JSON array of messages (conversation + assistant reply + tool results)
 import json, os, re, subprocess, sys, urllib.request
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-MODEL = os.environ.get("LLM_BUILD_MODEL", "qwen3:1.7b")
+MODEL = os.environ.get("LLM_BUILD_MODEL", "qwen3:0.6b")
 TOOLS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_definitions.json")
 MCP_TOOL_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_tool.sh")
 

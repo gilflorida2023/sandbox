@@ -132,5 +132,35 @@
         "required": ["topic"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.git_clone",
+      "description": "Clone a git repository. Path is a subdirectory within the workspace root.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "Git repository URL"},
+          "path": {"type": "string", "description": "Subdirectory within workspace to clone into (e.g. \"repos/project\")"}
+        },
+        "required": ["url", "path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.delete",
+      "description": "Delete a file or empty directory. Use recursive:true for non-empty directories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path relative to workspace root"},
+          "recursive": {"type": "boolean", "description": "Delete recursively", "default": false}
+        },
+        "required": ["path"]
+      }
+    }
   }
 ]
