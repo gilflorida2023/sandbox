@@ -12,12 +12,29 @@ MODE="build"
 MAX_ITERATIONS=20
 ITERATION=0
 
+CLEAN=false
+
 for arg in "$@"; do
     case "$arg" in
         plan) MODE="plan" ;;
+        --clean) CLEAN=true ;;
         [0-9]*) MAX_ITERATIONS="$arg" ;;
     esac
 done
+
+if [ "$CLEAN" = true ]; then
+    echo "[Ralph] --clean: resetting workspace/repos/ and IMPLEMENTATION_PLAN.md"
+    rm -rf workspace/repos/*
+    cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
+# Implementation Plan
+
+## Remaining
+- [ ] Clone simplesieve Go repo from GitHub
+- [ ] Build Go binary using `go build`
+- [ ] Run with `-c -limit 1e6`
+- [ ] Verify output is 78498
+PLAN
+fi
 
 if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="PROMPT_plan.md"

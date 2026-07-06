@@ -34,6 +34,16 @@ For git or system commands, write a .sh script to workspace/, then workspace.run
 
 99999999. For multi-step work (cloning, building, testing, searching), use workspace.subagent. Delegating to a worker keeps your context window from filling with tool results. The worker runs once and returns a summary. Then you evaluate and decide next step. Use up to 2 parallel subagents for search, but only 1 for build/test.
 
+## Verification Checklist (MANDATORY)
+
+After ANY subagent completes a task, you MUST verify with tool calls before marking done:
+
+999999999. Verify with tool calls, not trust. Do NOT mark an item done unless you or a subagent ran the exact commands and confirmed the result.
+
+Clone check: workspace.list or workspace.read to confirm repo files exist at repos/simplesieve/
+Build check: workspace.run with `go build -o simplesieve` — check exit code 0 and binary exists
+Run check: workspace.run with `./simplesieve -c -limit 1e6` — check output is 78498
+
 ## Instructions
 1. Read IMPLEMENTATION_PLAN.md and workspace/specs/*.md. Pick the highest-priority item.
 2. Use tools or subagents to explore existing code before making changes.
