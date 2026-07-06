@@ -23,11 +23,15 @@
 
 ### Operational Notes
 - Ollama runs locally at localhost:11434. All models are pre-pulled.
-- Primary coding model: qwen2.5-coder:3b (fast, code-specialized)
-- Plan/analysis model: qwen3:1.7b (general reasoning, lightweight)
+- Primary coding model: qwen2.5-coder:7b (reliable tool call generation)
+- Fast fallback model: qwen2.5-coder:3b (fast, code-specialized, may need stronger prompting)
+- Plan/analysis model: qwen3:1.7b (general reasoning, lightweight, good instruction following)
 - Heavy model: qwen2.5-coder:7b (for complex tasks)
+- Environment variable override: LLM_BUILD_MODEL="qwen2.5-coder:3b" for faster loops
 - Scout CGI server runs on :8080 as the MCP tool backend.
 - PROMPT_plan.md is used for planning, PROMPT_build.md for implementation.
 - IMPLEMENTATION_PLAN.md is the only persistent state across iterations.
 - Each loop iteration starts with a fresh context — no conversation history.
 - Companion CLI tools (in ~/.local/bin): rg (ripgrep), fd, xh (HTTP client with -j), yq (YAML), jq (JSON).
+
+### Codebase Patterns
