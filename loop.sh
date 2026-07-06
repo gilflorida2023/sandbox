@@ -68,8 +68,14 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
     echo ""
     echo "[Ralph] Iteration $((ITERATION + 1))..."
 
+    # Build workspace context: list files so the model doesn't guess paths
+    WORKSPACE_TREE=$( (echo "  workspace/"; find workspace/ -type f -o -type d | sed 's|^workspace/|    |' | sort) 2>/dev/null || echo "  (empty)")
+
     {
         cat "$PROMPT_FILE"
+        echo ""
+        echo "## Workspace Files"
+        echo "$WORKSPACE_TREE"
         echo ""
         if [ -f "workspace/IMPLEMENTATION_PLAN.md" ] && [ -s "workspace/IMPLEMENTATION_PLAN.md" ]; then
             echo "## IMPLEMENTATION_PLAN.md"

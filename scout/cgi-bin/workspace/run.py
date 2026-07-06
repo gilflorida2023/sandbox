@@ -30,6 +30,25 @@ def main():
         print(json.dumps({'success': False, 'error': 'Path outside workspace'}))
         sys.exit(1)
 
+    if not full_path.exists():
+        print(json.dumps({'success': False, 'error': f'File not found or not executable: {path}'}))
+        sys.exit(1)
+
+    # Scan script content for dangerous commands
+    blocked_content = [
+        "ssh-keygen", "credential.helper", "chsh", "passwd",
+        "adduser", "useradd", "visudo", "sudo ",
+    ]
+    try:
+        file_content = full_path.read_text()
+        for bc in blocked_content:
+            if bc in file_content:
+                error_msg = f'Security block: script contains "{bc}". Running it is not allowed.'
+                print(json.dumps({'success': False, 'error': error_msg}))
+                sys.exit(1)
+    except Exception:
+        pass  # binary files may not be readable; skip content scan
+
     # Auto-detect interpreter for non-executable scripts
     interpreter = None
     if not os.access(full_path, os.X_OK):

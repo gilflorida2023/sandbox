@@ -30,9 +30,13 @@ For git or system commands, write a .sh script to workspace/, then workspace.run
 
 999999. Complete implementations only. No stubs, no placeholders, no TODOs.
 
-9999999. When cloning a repo, read the spec file to get the EXACT URL. Do not guess or modify the URL. If git_clone fails, re-read the spec for the correct URL and retry.
+9999998. The spec file for this project is at workspace/specs/first_test.md. Always read it to get the EXACT clone URL before attempting to clone. Do NOT guess the filename or the URL.
+
+9999999. When cloning a repo, read the spec file to get the EXACT URL. Do not guess or modify the URL. If git_clone fails, re-read the spec for the correct URL and retry. If git_clone returns "could not read Username", the URL is likely wrong — do NOT add .netrc or credentials.
 
 99999999. For multi-step work (cloning, building, testing, searching), use workspace.subagent. Delegating to a worker keeps your context window from filling with tool results. The worker runs once and returns a summary. Then you evaluate and decide next step. Use up to 2 parallel subagents for search, but only 1 for build/test.
+
+999999999. SAFETY: NEVER write to .netrc, .ssh/, id_rsa, .git-credentials, authorized_keys, or known_hosts. NEVER run ssh-keygen, credential.helper, sudo, apt-get, chsh, passwd, adduser, useradd, or visudo. The tools will block these anyway — don't waste iterations on them.
 
 ## Verification Checklist (MANDATORY)
 

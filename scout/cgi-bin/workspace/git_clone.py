@@ -48,6 +48,8 @@ def main():
         }
         if success:
             output["path"] = str(clone_dest)
+        elif "could not read Username" in result.stderr or "terminal prompts disabled" in result.stderr:
+            output["suggestion"] = "The URL may be wrong or the repo doesn't exist. Read the spec file at workspace/specs/ for the exact URL and retry. Do NOT set up credentials or .netrc."
         print(json.dumps(output))
     except subprocess.TimeoutExpired:
         print(json.dumps({"success": False, "error": "git clone timed out after 120s"}))
