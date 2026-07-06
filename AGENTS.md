@@ -23,11 +23,12 @@
 
 ### Operational Notes
 - Ollama runs locally at localhost:11434. All models are pre-pulled.
-- Primary coding model: qwen3:0.6b (tiny, fast, surprisingly capable — README benchmark winner)
-- Fast fallback model: qwen3:1.7b (5s, correct, better instruction following)
-- Plan/analysis model: qwen2.5:7b (reliable for complex multi-step planning)
-- Heavy model: qwen3:8b (deeper reasoning when needed)
+- Primary coding model: qwen3:0.6b (simplesieve 1.43s, native tools 4.46s — fastest in both benchmarks)
+- Fast fallback model: qwen3:1.7b (simplesieve 5s, native tools 7s — more reliable instruction following)
+- Plan/analysis model: qwen2.5:7b (simplesieve 21s, native tools 7s — reliable multi-step planning)
+- Heavy model: qwen3:8b (simplesieve 20s, native tools 16s — deeper reasoning)
 - NOTE: qwen2.5-coder:3b and opencoder models REFUSE tasks — do not use them as defaults
+- NOTE: qwen3.5 family has a write-call bug (only emits 1 tool call per turn) — do not use in agent loops
 - Environment variable override: LLM_BUILD_MODEL="qwen3:1.7b" for more capable builds
 - Scout CGI server runs on :8080 as the MCP tool backend.
 - PROMPT_plan.md is used for planning, PROMPT_build.md for implementation.
