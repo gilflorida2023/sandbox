@@ -11,7 +11,7 @@
 - Edit existing files; never create new files unless asked.
 - Use `mcp_tool.sh workspace.read` to read files, `mcp_tool.sh workspace.write` to write them.
 - Use `mcp_tool.sh workspace.run` to execute code or tests.
-- All paths are relative to `workspace/`.
+- All paths are relative to workspace root. Do NOT prefix with "workspace/".
 - Single source of truth — no migrations, no adapters, no duplicated config.
 - When editing, match existing code style (quotes, indentation, ternaries).
 - No unnecessary comments in production code.
