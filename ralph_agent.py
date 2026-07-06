@@ -111,9 +111,14 @@ def run_tool(tc):
         except json.JSONDecodeError:
             args = {}
     sys.stderr.write(f"[tool] {name}\n")
-    r = subprocess.run(["bash", MCP_TOOL_SH, name, json.dumps(args)],
-        capture_output=True, text=True, timeout=60)
-    return r.stdout.strip() or json.dumps({"error": r.stderr.strip() or "no output"})
+    try:
+        r = subprocess.run(["bash", MCP_TOOL_SH, name, json.dumps(args)],
+            capture_output=True, text=True, timeout=60)
+        return r.stdout.strip() or json.dumps({"error": r.stderr.strip() or "no output"})
+    except subprocess.TimeoutExpired:
+        return json.dumps({"error": f"tool {name} timed out after 60s", "retryable": True})
+    except Exception as e:
+        return json.dumps({"error": f"tool {name} failed: {e}", "retryable": True})
 
 def main():
     inp = sys.stdin.read().strip()

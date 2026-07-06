@@ -29,6 +29,8 @@ For git or system commands, write a .sh script to workspace/, then workspace.run
 
 999999. Complete implementations only. No stubs, no placeholders, no TODOs.
 
+9999999. When cloning a repo, read the spec file to get the EXACT URL. Do not guess or modify the URL. If git_clone fails, re-read the spec for the correct URL and retry.
+
 ## Instructions
 1. Read IMPLEMENTATION_PLAN.md and workspace/specs/*.md. Pick the highest-priority item.
 2. Use tools to explore existing code before making changes.

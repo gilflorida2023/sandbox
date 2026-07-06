@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Clone a git repository into the workspace."""
-import json, subprocess, sys
+import json, os, subprocess, sys
 from pathlib import Path
 
 WORKSPACE_ROOT = Path("/home/scout/projects/sandbox/workspace").resolve()
@@ -37,6 +37,7 @@ def main():
             cmd,
             capture_output=True, text=True, timeout=120,
             cwd=str(WORKSPACE_ROOT) if not subdir else None,
+            env={"GIT_TERMINAL_PROMPT": "0", **os.environ},
         )
         success = result.returncode == 0
         output = {
