@@ -18,8 +18,5 @@ venv/
 # Go compiled binaries (built from main.go, named after parent dir)
 services/ollama_client/ollama_client
 
-# Java/Maven build output
-gfm-viewer/target/
-
 # Transient run logs
 out.txt
