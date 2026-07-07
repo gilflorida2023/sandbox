@@ -78,12 +78,12 @@
     "type": "function",
     "function": {
       "name": "workspace.compile",
-      "description": "Syntax check or compile source code. Supports go, python, c, cpp, rust. Auto-detects language from file extension.",
+      "description": "Syntax check or compile source code. Supports go, python, c, cpp, rust, java, maven. Auto-detects language from file extension or project files (pom.xml for Maven).",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {"type": "string", "description": "Source file path relative to workspace root"},
-          "language": {"type": "string", "enum": ["go", "python", "c", "cpp", "rust", "auto"], "default": "auto"}
+          "language": {"type": "string", "enum": ["go", "python", "c", "cpp", "rust", "java", "maven", "auto"], "default": "auto"}
         },
         "required": ["path"]
       }

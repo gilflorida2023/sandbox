@@ -17,12 +17,14 @@ def detect_language(path: str, is_dir: bool) -> str:
             return "python"
         if (dir_path / "package.json").exists():
             return "node"
+        if (dir_path / "pom.xml").exists():
+            return "maven"
         return "unknown"
     ext = Path(path).suffix.lower()
     return {
         ".go": "go", ".py": "python", ".c": "c",
         ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp",
-        ".rs": "rust",
+        ".rs": "rust", ".java": "java",
     }.get(ext, "unknown")
 
 def main():
@@ -112,9 +114,37 @@ def main():
                     binary = f"{path}/target/debug/{full_path.name}"
             else:
                 output = "Cargo.toml not found"
+
+        elif language == "java":
+            java_home = os.path.expanduser("~/.local/jdk")
+            env = os.environ.copy()
+            env["JAVA_HOME"] = java_home
+            env["PATH"] = f"{java_home}/bin:{env.get('PATH', '')}"
+            result = subprocess.run(["javac", str(full_path)],
+                                    cwd=str(WORKSPACE_ROOT), capture_output=True, text=True, timeout=60,
+                                    env=env)
+            output = result.stdout + result.stderr
+            if result.returncode == 0:
+                success = True
+                output = "Compilation succeeded"
+
+        elif language == "maven":
+            java_home = os.path.expanduser("~/.local/jdk")
+            maven_home = os.path.expanduser("~/.local/maven")
+            env = os.environ.copy()
+            env["JAVA_HOME"] = java_home
+            env["PATH"] = f"{java_home}/bin:{maven_home}/bin:{env.get('PATH', '')}"
+            result = subprocess.run(["mvn", "compile", "-q"],
+                                    cwd=str(full_path), capture_output=True, text=True, timeout=300,
+                                    env=env)
+            output = result.stdout + result.stderr
+            if result.returncode == 0:
+                success = True
+                output = "Maven build succeeded"
+
         else:
             output = f"Unknown language: {language}"
-            suggestion = "Specify language explicitly (go, python, c, cpp, rust) or use a recognized file extension"
+            suggestion = "Specify language explicitly (go, python, c, cpp, rust, java, maven) or use a recognized file extension"
     except subprocess.TimeoutExpired:
         output = "Compilation timed out"
     except FileNotFoundError as e:
