@@ -75,6 +75,13 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
     # Build workspace context: list files so the model doesn't guess paths
     WORKSPACE_TREE=$( (echo "  workspace/"; find workspace/ -type f -o -type d | sed 's|^workspace/|    |' | sort) 2>/dev/null || echo "  (empty)")
 
+    # Read and clear blocker from previous failed iteration
+    BLOCKER_JSON=""
+    if [ -f "workspace/.blocker" ]; then
+        BLOCKER_JSON=$(cat workspace/.blocker)
+        rm -f workspace/.blocker
+    fi
+
     {
         cat "$PROMPT_FILE"
         echo ""
@@ -91,10 +98,10 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
             cat AGENTS.md
             echo ""
         fi
-        if [ -f "workspace/.blocker" ]; then
-            echo "## BLOCKER from previous run"
-            echo "The following error repeated 3+ times and was not resolved. Read this and change your approach:"
-            cat workspace/.blocker
+        if [ -n "$BLOCKER_JSON" ]; then
+            echo "## BLOCKER from previous iteration"
+            echo "The following error repeated 3+ times. Read this and change your approach:"
+            echo "$BLOCKER_JSON"
             echo ""
             echo "To clear this blocker, update IMPLEMENTATION_PLAN.md to skip or work around the failing step."
             echo ""
