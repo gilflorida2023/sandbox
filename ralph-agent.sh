@@ -22,6 +22,8 @@ jq -n --arg prompt "$PROMPT" '[{"role":"user","content":$prompt}]' > "$MESSAGES_
 
 [ "$VERBOSE" = "1" ] && echo "[ralph-agent] Model: $MODEL, tokens: $(wc -c <<< "$PROMPT")" >&2
 
+declare -A FAIL_COUNTS
+
 for ((i=1; i<=MAX_INNER; i++)); do
     [ "$VERBOSE" = "1" ] && echo "[ralph-agent] iter $i → Ollama" >&2
 
@@ -83,6 +85,18 @@ for ((i=1; i<=MAX_INNER; i++)); do
             [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  → $NAME $(echo "$ARGS_RAW" | head -c 200)" >&2
 
             RESULT=$(echo "$ARGS_RAW" | timeout 60 bash "$SELF_DIR/mcp_tool.sh" "$NAME" 2>/dev/null || echo '{"error":"tool execution failed or timed out"}')
+
+            # Repeated-failure guard: if same tool+args fails 3+ times, override result
+            if echo "$RESULT" | jq -e '.success == false or (.error != null and .error != "")' >/dev/null 2>&1; then
+                FAIL_KEY="$NAME|$ARGS_RAW"
+                COUNT="${FAIL_COUNTS[$FAIL_KEY]:-0}"
+                COUNT=$((COUNT + 1))
+                FAIL_COUNTS["$FAIL_KEY"]=$COUNT
+                if [ "$COUNT" -ge 3 ]; then
+                    RESULT='{"success":false,"error":"BLOCKER: This exact tool call has failed 3 times. STOP repeating it. Read the error messages above and completely change your approach.","blocker":true}'
+                    [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  ⛔ blocker: $NAME failed $COUNT times" >&2
+                fi
+            fi
 
             jq --arg id "$TC_ID" --arg result "$RESULT" \
                 '. + [{"role":"tool", "content":$result, "tool_call_id":$id}]' \
