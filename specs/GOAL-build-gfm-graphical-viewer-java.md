@@ -25,10 +25,19 @@ They are exercised by `gfm.SpecExampleTest` (`mvn test`). Read them only to
 validate parser behavior, never as the definition of the project.
 
 ## How to build / test / run (Java)
-See AGENTS.md "## Java" for the toolchain and exact commands. Summary:
-- Build:    `bash build.sh build`        (→ `gfm-viewer/target/gfm-viewer-1.0.0.jar`)
-- Test:     `bash build.sh test`         (runs `SpecExampleTest` against GFM spec)
-- Run GUI:  `bash build.sh run <file.md>`(launches the JavaFX viewer)
+The tool sandbox does NOT have Maven/Java on its PATH, so build via a
+`workspace/`-local script (mirrors the Go pattern in AGENTS.md):
+1. `workspace.write` a script `build.sh` in `workspace/`:
+    #!/usr/bin/env bash
+    export JAVA_HOME="$HOME/.local/jdk"
+    export PATH="$JAVA_HOME/bin:$HOME/.local/maven/bin:$PATH"
+    cd /home/scout/projects/sandbox/gfm-viewer
+    mvn clean package -q
+2. `workspace.run {"path":"build.sh", "timeout":300}` (use a large timeout).
+- Build:  `mvn clean package -q` → `gfm-viewer/target/gfm-viewer-1.0.0.jar`
+- Test:   `mvn test`             → runs `gfm.SpecExampleTest` against the GFM spec
+- Run GUI:`mvn javafx:run -Djavafx.args="<file.md>"` (needs a display)
+See AGENTS.md "## Java" for full detail.
 
 ## Deliverable
 A working JavaFX GFM viewer. Optionally, add a headless render entry point

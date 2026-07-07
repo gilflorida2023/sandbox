@@ -29,6 +29,7 @@
 - Paths are relative to workspace root. Do NOT prefix with "workspace/"
 - workspace.run runs scripts from workspace/ as CWD. `cd repos/simplesieve` in .sh scripts works.
 - For Go build: write a .sh script, then workspace.run it
+- For Java/Maven build: write a .sh script that exports JAVA_HOME and PATH, then workspace.run it (Maven is not on PATH by default inside the tool sandbox)
 - NEVER pass a directory to workspace.run
 - workspace.run on a .sh file auto-runs with bash. workspace.run on a .py file auto-runs with python3.
 
@@ -69,24 +70,25 @@
 - Expected output: 78498
 
 ## Java
-- JDK 21 is at `~/.local/jdk`. Set `JAVA_HOME=~/.local/jdk` (also exported by `build.sh`).
-- Maven 3.9.16 is at `~/.local/maven` (`~/.local/maven/bin/mvn`).
+- JDK 21 is at `~/.local/jdk`. Maven 3.9.16 is at `~/.local/maven` (`~/.local/maven/bin/mvn`).
+  IMPORTANT: Maven/Java are NOT on the default PATH inside the tool sandbox, so a
+  build script must export them (see build pattern below).
 - JavaFX 22 is pulled via Maven (`org.openjfx:javafx-controls`, `javafx-web`).
 - Project: `gfm-viewer/` — a JavaFX GFM graphical viewer. Architecture in
   `workspace/specs/GOAL-build-gfm-graphical-viewer-java.md`.
-- Compile & package (produces the runnable shaded jar):
-    cd gfm-viewer && mvn clean package -q
-    # → gfm-viewer/target/gfm-viewer-1.0.0.jar
-  (or simply `bash build.sh build` from the workspace root)
-- Run the GUI (needs a display):
-    cd gfm-viewer && mvn javafx:run -Djavafx.args="<file.md>" -q
-    # or `bash build.sh run <file.md>`
-- Test (runs `gfm.SpecExampleTest` against the GFM spec):
-    cd gfm-viewer && mvn test
-    # or `bash build.sh test`
-- Headless render: the parser/renderer in `gfm.parser` have NO JavaFX
-  dependency and can be run without a display once a headless entry point
-  (e.g. `gfm.parser.GfmRender`) is added:
+- Build pattern (mirrors Go): WRITE a build script in `workspace/`, e.g. `build.sh`:
+    #!/usr/bin/env bash
+    export JAVA_HOME="$HOME/.local/jdk"
+    export PATH="$JAVA_HOME/bin:$HOME/.local/maven/bin:$PATH"
+    cd /home/scout/projects/sandbox/gfm-viewer
+    mvn clean package -q
+  then run it: `workspace.run {"path":"build.sh", "timeout":300}`
+  (Maven builds need a large timeout — the 10–30s tool default is far too short.)
+- Test: replace `mvn clean package -q` with `mvn test` (runs `gfm.SpecExampleTest`
+  against the GFM spec).
+- Run the GUI (needs a display): `mvn javafx:run -Djavafx.args="<file.md>" -q`.
+- Headless render: `gfm.parser` has no JavaFX dependency; once a headless entry
+  point (`gfm.parser.GfmRender`) exists:
     java -cp gfm-viewer/target/gfm-viewer-1.0.0.jar gfm.parser.GfmRender <file.md>
 - Markdown spec: https://github.github.com/gfm/
 - Project goal spec: `workspace/specs/GOAL-build-gfm-graphical-viewer-java.md`.
