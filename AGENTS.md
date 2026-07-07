@@ -1,7 +1,7 @@
 # AGENTS.md — Constitution
 
 ## Workflow
-1. **Read specs first** — `workspace.list {"path":"specs"}` then `workspace.read` every `.md` file in specs/
+1. **Read specs first** — `workspace.list {"path":"specs"}` then read the GOAL spec (filename starts with `GOAL-`) FIRST. The `gfm-language/` subdir holds the GFM language spec (conformance reference) — read those only to validate parser behavior, never as the project definition.
 2. Read IMPLEMENTATION_PLAN.md and pick the highest-priority unchecked task
 3. Work on it using the available tools
 4. When a task is complete, verify it (read files, run commands, check output)
