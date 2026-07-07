@@ -30,9 +30,7 @@ if [ "$CLEAN" = true ]; then
     echo "  Unloading $model"
     ollama stop "$model" 2>/dev/null || true
     done
-    rm -rf workspace/repos/*
-    # Remove stale workspace scripts from previous runs
-    find workspace/ -maxdepth 1 -name '*.sh' -delete
+    find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
     cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
 # Implementation Plan
 
