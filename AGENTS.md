@@ -66,6 +66,15 @@
 - Run: `cd repos/simplesieve && ./simplesieve -c -limit 1e6`
 - Expected output: 78498
 
+## Java
+- JDK 21 is at ~/.local/jdk. JAVA_HOME=~/.local/jdk
+- Maven 3.9.16 is at ~/.local/maven
+- JavaFX project: gfm-viewer/
+- Build: `bash build.sh build` (or `mvn clean package -q` in gfm-viewer/)
+- Run: `bash build.sh run <markdown-file>` (or `mvn javafx:run` in gfm-viewer/)
+- Test: `bash build.sh test` (or `mvn test` in gfm-viewer/)
+- Markdown spec: https://github.github.com/gfm/
+
 ## Completion Signal
 - When ALL tasks are complete and verified, output `<promise>DONE</promise>`
 - Do NOT output this until you've verified the results
