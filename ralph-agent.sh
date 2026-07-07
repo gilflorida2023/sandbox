@@ -23,17 +23,20 @@ jq -n --arg prompt "$PROMPT" '[{"role":"user","content":$prompt}]' > "$MESSAGES_
 [ "$VERBOSE" = "1" ] && echo "[ralph-agent] Model: $MODEL, tokens: $(wc -c <<< "$PROMPT")" >&2
 
 declare -A FAIL_COUNTS
+EMPTY_COUNT=0
+API_LOG="$SELF_DIR/workspace/ollama_api_log.jsonl"
 
 for ((i=1; i<=MAX_INNER; i++)); do
+
+    MESSAGES=$(cat "$MESSAGES_FILE")
+    TOOLS=$(cat "$TOOLS_FILE")
+
     [ "$VERBOSE" = "1" ] && {
         MSG_COUNT=$(jq 'length' "$MESSAGES_FILE")
         PAYLOAD_BYTES=$(wc -c <<< "$MESSAGES")
         echo "[ralph-agent] ── iter $i ─────────────────────" >&2
         echo "[ralph-agent] ${MSG_COUNT} msgs, ~${PAYLOAD_BYTES}b → Ollama ($MODEL)" >&2
     }
-
-    MESSAGES=$(cat "$MESSAGES_FILE")
-    TOOLS=$(cat "$TOOLS_FILE")
 
     PAYLOAD=$(jq -n \
         --arg model "$MODEL" \
@@ -73,6 +76,9 @@ for ((i=1; i<=MAX_INNER; i++)); do
     TC_RAW=$(echo "$RESPONSE" | jq -c '.message.tool_calls // []')
     NUM_TOOLS=$(echo "$TC_RAW" | jq 'length')
 
+    # Log this API call
+    echo "{\"ts\":\"$(date -Iseconds)\",\"model\":\"$MODEL\",\"iter\":$i,\"http_code\":$HTTP_CODE,\"time\":${TIME_TOTAL:-0},\"bytes\":${SIZE_DOWNLOAD:-0},\"tools\":$NUM_TOOLS,\"content_len\":${#CONTENT}}" >> "$API_LOG" 2>/dev/null || true
+
     [ "$VERBOSE" = "1" ] && {
         if [ "$NUM_TOOLS" -gt 0 ]; then
             echo "[ralph-agent] iter $i ← $NUM_TOOLS tool(s)" >&2
@@ -86,15 +92,35 @@ for ((i=1; i<=MAX_INNER; i++)); do
         fi
     }
 
+    # Check for DONE signal — always exit regardless of spiral
+    if echo "$CONTENT" | grep -qF '<promise>DONE</promise>'; then
+        echo "$CONTENT"
+        exit 0
+    fi
+
     # Append assistant message to conversation
     jq --arg role "$ROLE" --arg content "$CONTENT" --argjson tc "$TC_RAW" \
         '. + [{"role":$role, "content":$content, "tool_calls":$tc}]' \
         "$MESSAGES_FILE" > "$MSG_FILE" && cp "$MSG_FILE" "$MESSAGES_FILE"
 
-    # Check for DONE signal
-    if echo "$CONTENT" | grep -qF '<promise>DONE</promise>'; then
-        echo "$CONTENT"
-        exit 0
+    # Text-spiral detection: 3+ consecutive text-only responses with no tool calls
+    if [ "$NUM_TOOLS" -eq 0 ]; then
+        EMPTY_COUNT=$((EMPTY_COUNT + 1))
+    else
+        EMPTY_COUNT=0
+    fi
+
+    if [ "$EMPTY_COUNT" -ge 5 ]; then
+        [ "$VERBOSE" = "1" ] && echo "[ralph-agent] ⛔ text spiral: $EMPTY_COUNT consecutive text-only, exiting" >&2
+        exit 1
+    fi
+
+    if [ "$EMPTY_COUNT" -ge 3 ]; then
+        WARN='{"success":false,"error":"WARNING: You have produced 3+ text-only responses without calling a tool. Either call a tool to make progress NOW, or output <promise>DONE</promise> to finish."}'
+        jq --arg id "spiral_$i" --arg result "$WARN" \
+            '. + [{"role":"tool", "content":$result, "tool_call_id":$id}]' \
+            "$MESSAGES_FILE" > "$MSG_FILE" && cp "$MSG_FILE" "$MESSAGES_FILE"
+        [ "$VERBOSE" = "1" ] && echo "[ralph-agent] ⚠ text spiral warning injected" >&2
     fi
 
     # Execute tool calls (process substitution avoids subshell)
@@ -107,7 +133,7 @@ for ((i=1; i<=MAX_INNER; i++)); do
 
             [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  → $NAME $(echo "$ARGS_RAW" | head -c 200)" >&2
 
-            RESULT=$(echo "$ARGS_RAW" | timeout 60 bash "$SELF_DIR/mcp_tool.sh" "$NAME" 2>/dev/null || echo '{"error":"tool execution failed or timed out"}')
+            RESULT=$(echo "$ARGS_RAW" | timeout 60 bash "$SELF_DIR/mcp_tool.sh" "$NAME" || echo '{"error":"tool execution failed or timed out"}')
 
             # Repeated-failure guard: if same tool+args fails 3+ times, override result
             if echo "$RESULT" | jq -e '.success == false or (.error != null and .error != "")' >/dev/null 2>&1; then
