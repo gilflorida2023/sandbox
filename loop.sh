@@ -30,15 +30,7 @@ if [ "$CLEAN" = true ]; then
         ollama stop "$model" 2>/dev/null || true
     done
     find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
-    cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
-# Implementation Plan
-
-## Remaining
-- [ ] Clone simplesieve Go repo from GitHub
-- [ ] Build Go binary using `go build`
-- [ ] Run with `-c -limit 1e6`
-- [ ] Verify output is 78498
-PLAN
+    find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
     exit 0
 fi
 
