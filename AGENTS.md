@@ -55,6 +55,8 @@
 - These are blocked anyway — don't waste iterations on them
 
 ## Scope
+- **Project goal:** Build a graphical GFM rendering tool in Java — see
+  `workspace/specs/GOAL-build-gfm-graphical-viewer-java.md`.
 - Your ONLY job is the items in IMPLEMENTATION_PLAN.md
 - Do NOT install software or modify system configuration
 - If a tool returns "command not found", report it as a blocker — do NOT try to install it
@@ -67,13 +69,27 @@
 - Expected output: 78498
 
 ## Java
-- JDK 21 is at ~/.local/jdk. JAVA_HOME=~/.local/jdk
-- Maven 3.9.16 is at ~/.local/maven
-- JavaFX project: gfm-viewer/
-- Build: `bash build.sh build` (or `mvn clean package -q` in gfm-viewer/)
-- Run: `bash build.sh run <markdown-file>` (or `mvn javafx:run` in gfm-viewer/)
-- Test: `bash build.sh test` (or `mvn test` in gfm-viewer/)
+- JDK 21 is at `~/.local/jdk`. Set `JAVA_HOME=~/.local/jdk` (also exported by `build.sh`).
+- Maven 3.9.16 is at `~/.local/maven` (`~/.local/maven/bin/mvn`).
+- JavaFX 22 is pulled via Maven (`org.openjfx:javafx-controls`, `javafx-web`).
+- Project: `gfm-viewer/` — a JavaFX GFM graphical viewer. Architecture in
+  `workspace/specs/GOAL-build-gfm-graphical-viewer-java.md`.
+- Compile & package (produces the runnable shaded jar):
+    cd gfm-viewer && mvn clean package -q
+    # → gfm-viewer/target/gfm-viewer-1.0.0.jar
+  (or simply `bash build.sh build` from the workspace root)
+- Run the GUI (needs a display):
+    cd gfm-viewer && mvn javafx:run -Djavafx.args="<file.md>" -q
+    # or `bash build.sh run <file.md>`
+- Test (runs `gfm.SpecExampleTest` against the GFM spec):
+    cd gfm-viewer && mvn test
+    # or `bash build.sh test`
+- Headless render: the parser/renderer in `gfm.parser` have NO JavaFX
+  dependency and can be run without a display once a headless entry point
+  (e.g. `gfm.parser.GfmRender`) is added:
+    java -cp gfm-viewer/target/gfm-viewer-1.0.0.jar gfm.parser.GfmRender <file.md>
 - Markdown spec: https://github.github.com/gfm/
+- Project goal spec: `workspace/specs/GOAL-build-gfm-graphical-viewer-java.md`.
 
 ## Completion Signal
 - When ALL tasks are complete and verified, output `<promise>DONE</promise>`
