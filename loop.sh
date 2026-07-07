@@ -39,6 +39,7 @@ if [ "$CLEAN" = true ]; then
 - [ ] Run with `-c -limit 1e6`
 - [ ] Verify output is 78498
 PLAN
+    exit 0
 fi
 
 PROMPT_FILE="PROMPT_${MODE}.md"

@@ -40,11 +40,12 @@ for ((i=1; i<=MAX_INNER; i++)); do
             options: {temperature: 0.3, num_ctx: 8192}
         }')
 
-    RESPONSE=$(curl -s "$OLLAMA_HOST/api/chat" \
+    RESPONSE=$(curl -s --max-time 300 "$OLLAMA_HOST/api/chat" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD" 2>/dev/null) || {
-        echo "Ollama error: curl failed" >&2
-        exit 1
+        rc=$?
+        echo "Ollama error: curl failed (exit $rc)" >&2
+        continue
     }
 
     ROLE=$(echo "$RESPONSE" | jq -r '.message.role // "assistant"')
@@ -81,7 +82,7 @@ for ((i=1; i<=MAX_INNER; i++)); do
 
             [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  → $NAME $(echo "$ARGS_RAW" | head -c 200)" >&2
 
-            RESULT=$(echo "$ARGS_RAW" | bash "$SELF_DIR/mcp_tool.sh" "$NAME" 2>/dev/null || echo '{"error":"tool execution failed"}')
+            RESULT=$(echo "$ARGS_RAW" | timeout 60 bash "$SELF_DIR/mcp_tool.sh" "$NAME" 2>/dev/null || echo '{"error":"tool execution failed or timed out"}')
 
             jq --arg id "$TC_ID" --arg result "$RESULT" \
                 '. + [{"role":"tool", "content":$result, "tool_call_id":$id}]' \
