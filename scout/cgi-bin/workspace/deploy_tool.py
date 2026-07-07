@@ -35,6 +35,10 @@ def main():
     dest_name = tool_name.split(".")[-1] + ".py" if "." in tool_name else tool_name + ".py"
     dest_path = CGI_DIR / dest_name
 
+    if dest_path.exists():
+        print(json.dumps({"success": True, "status": "already_exists", "deployed_to": str(dest_path), "tool_name": tool_name, "message": f"Tool {tool_name} already deployed, skipping"}))
+        return
+
     content = src_path.read_text()
     if not content.startswith("#!/usr/bin/env python3"):
         content = "#!/usr/bin/env python3\n" + content
