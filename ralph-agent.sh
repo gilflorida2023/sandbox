@@ -25,7 +25,7 @@ jq -n --arg prompt "$PROMPT" '[{"role":"user","content":$prompt}]' > "$MESSAGES_
 declare -A FAIL_COUNTS
 
 for ((i=1; i<=MAX_INNER; i++)); do
-    [ "$VERBOSE" = "1" ] && echo "[ralph-agent] iter $i → Ollama" >&2
+    [ "$VERBOSE" = "1" ] && echo "[ralph-agent] iter $i → Ollama (model: $MODEL)" >&2
 
     MESSAGES=$(cat "$MESSAGES_FILE")
     TOOLS=$(cat "$TOOLS_FILE")
@@ -60,6 +60,11 @@ for ((i=1; i<=MAX_INNER; i++)); do
             echo "[ralph-agent] iter $i ← $NUM_TOOLS tool(s)" >&2
         else
             echo "[ralph-agent] iter $i ← text (${#CONTENT} chars)" >&2
+        fi
+        if [ -n "$CONTENT" ] && [ "${#CONTENT}" -gt 3 ]; then
+            echo "[ralph-agent] ── content ──" >&2
+            echo "$CONTENT" >&2
+            echo "[ralph-agent] ─────────────" >&2
         fi
     }
 
