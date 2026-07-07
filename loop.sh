@@ -29,8 +29,17 @@ if [ "$CLEAN" = true ]; then
     ollama ps 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r model; do
         ollama stop "$model" 2>/dev/null || true
     done
-    find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
-    find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
+    find workspace/ -maxdepth 1 -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
+    # Write fresh plan from specs
+    SPEC_FILES=$(ls workspace/specs/*.md 2>/dev/null | sed 's|.*/||' | sed 's|\.md$||')
+    {
+        echo "# Implementation Plan"
+        echo ""
+        echo "## Remaining"
+        while IFS= read -r spec; do
+            [ -n "$spec" ] && echo "- [ ] $spec (specs/${spec}.md)"
+        done <<< "$SPEC_FILES"
+    } > workspace/IMPLEMENTATION_PLAN.md
     exit 0
 fi
 
