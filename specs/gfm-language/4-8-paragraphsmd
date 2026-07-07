@@ -1,0 +1,224 @@
+# Paragraphs
+
+A sequence of non-blank lines that cannot be interpreted as other
+kinds of blocks forms a paragraph.
+The contents of the paragraph are the result of parsing the
+paragraph’s raw content as inlines.  The paragraph’s raw content
+is formed by concatenating the lines and removing initial and final
+whitespace.
+A simple example with two paragraphs:
+
+aaa
+
+bbb
+
+<p>aaa</p>
+<p>bbb</p>
+
+Paragraphs can contain multiple lines, but no blank lines:
+
+aaa
+bbb
+
+ccc
+ddd
+
+<p>aaa
+bbb</p>
+<p>ccc
+ddd</p>
+
+Multiple blank lines between paragraph have no effect:
+
+aaa
+
+bbb
+
+<p>aaa</p>
+<p>bbb</p>
+
+Leading spaces are skipped:
+
+  aaa
+ bbb
+
+<p>aaa
+bbb</p>
+
+Lines after the first may be indented any amount, since indented
+code blocks cannot interrupt paragraphs.
+
+aaa
+             bbb
+                                       ccc
+
+<p>aaa
+bbb
+ccc</p>
+
+However, the first line may be indented at most three spaces,
+or an indented code block will be triggered:
+
+   aaa
+bbb
+
+<p>aaa
+bbb</p>
+
+    aaa
+bbb
+
+<pre><code>aaa
+</code></pre>
+<p>bbb</p>
+
+Final spaces are stripped before inline parsing, so a paragraph
+that ends with two or more spaces will not end with a hard line
+break:
+
+aaa
+bbb
+
+<p>aaa<br />
+bbb</p>
+
+---
+
+### Example Example 189
+
+**Markdown input:**
+
+```markdown
+aaa
+
+bbb
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa</p>
+<p>bbb</p>
+```
+
+### Example Example 190
+
+**Markdown input:**
+
+```markdown
+aaa
+bbb
+
+ccc
+ddd
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa
+bbb</p>
+<p>ccc
+ddd</p>
+```
+
+### Example Example 191
+
+**Markdown input:**
+
+```markdown
+aaa
+
+
+bbb
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa</p>
+<p>bbb</p>
+```
+
+### Example Example 192
+
+**Markdown input:**
+
+```markdown
+aaa
+ bbb
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa
+bbb</p>
+```
+
+### Example Example 193
+
+**Markdown input:**
+
+```markdown
+aaa
+             bbb
+                                       ccc
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa
+bbb
+ccc</p>
+```
+
+### Example Example 194
+
+**Markdown input:**
+
+```markdown
+aaa
+bbb
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa
+bbb</p>
+```
+
+### Example Example 195
+
+**Markdown input:**
+
+```markdown
+aaa
+bbb
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>aaa
+</code></pre>
+<p>bbb</p>
+```
+
+### Example Example 196
+
+**Markdown input:**
+
+```markdown
+aaa     
+bbb
+```
+
+**Expected HTML output:**
+
+```html
+<p>aaa<br />
+bbb</p>
+```

@@ -1,0 +1,309 @@
+# Backslash escapes
+
+Any ASCII punctuation character may be backslash-escaped:
+
+\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~
+
+<p>!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~</p>
+
+Backslashes before other characters are treated as literal
+backslashes:
+
+\→\A\a\ \3\φ\«
+
+<p>\→\A\a\ \3\φ\«</p>
+
+Escaped characters are treated as regular characters and do
+not have their usual Markdown meanings:
+
+\*not emphasized*
+\<br/> not a tag
+\[not a link](/foo)
+\`not code`
+1\. not a list
+\* not a list
+\# not a heading
+\[foo]: /url "not a reference"
+\&ouml; not a character entity
+
+<p>*not emphasized*
+<br/> not a tag
+[not a link](/foo)
+`not code`
+1. not a list
+* not a list
+# not a heading
+[foo]: /url "not a reference"
+&ouml; not a character entity</p>
+
+If a backslash is itself escaped, the following character is not:
+
+\\*emphasis*
+
+<p>\<em>emphasis</em></p>
+
+A backslash at the end of the line is a hard line break:
+
+foo\
+bar
+
+<p>foo<br />
+bar</p>
+
+Backslash escapes do not work in code blocks, code spans, autolinks, or
+raw HTML:
+
+`` \[\` ``
+
+<p><code>\[\`</code></p>
+
+    \[\]
+
+<pre><code>\[\]
+</code></pre>
+
+~~~
+\[\]
+~~~
+
+<pre><code>\[\]
+</code></pre>
+
+<http://example.com?find=\*>
+
+<p><a href="http://example.com?find=%5C*">http://example.com?find=\*</a></p>
+
+<a href="/bar\/)">
+
+<a href="/bar\/)">
+
+But they work in all other contexts, including URLs and link titles,
+link references, and info strings in fenced code blocks:
+
+[foo](/bar\* "ti\*tle")
+
+<p><a href="/bar*" title="ti*tle">foo</a></p>
+
+[foo]
+
+[foo]: /bar\* "ti\*tle"
+
+<p><a href="/bar*" title="ti*tle">foo</a></p>
+
+``` foo\+bar
+foo
+```
+
+<pre><code class="language-foo+bar">foo
+</code></pre>
+
+---
+
+### Example Example 308
+
+**Markdown input:**
+
+```markdown
+\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~
+```
+
+**Expected HTML output:**
+
+```html
+<p>!&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
+```
+
+### Example Example 309
+
+**Markdown input:**
+
+```markdown
+\→\A\a\ \3\φ\«
+```
+
+**Expected HTML output:**
+
+```html
+<p>\→\A\a\ \3\φ\«</p>
+```
+
+### Example Example 310
+
+**Markdown input:**
+
+```markdown
+\*not emphasized*
+\<br/> not a tag
+\[not a link](/foo)
+\`not code`
+1\. not a list
+\* not a list
+\# not a heading
+\[foo]: /url "not a reference"
+\&ouml; not a character entity
+```
+
+**Expected HTML output:**
+
+```html
+<p>*not emphasized*
+&lt;br/&gt; not a tag
+[not a link](/foo)
+`not code`
+1. not a list
+* not a list
+# not a heading
+[foo]: /url &quot;not a reference&quot;
+&amp;ouml; not a character entity</p>
+```
+
+### Example Example 311
+
+**Markdown input:**
+
+```markdown
+\\*emphasis*
+```
+
+**Expected HTML output:**
+
+```html
+<p>\<em>emphasis</em></p>
+```
+
+### Example Example 312
+
+**Markdown input:**
+
+```markdown
+foo\
+bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+bar</p>
+```
+
+### Example Example 313
+
+**Markdown input:**
+
+```markdown
+`` \[\` ``
+```
+
+**Expected HTML output:**
+
+```html
+<p><code>\[\`</code></p>
+```
+
+### Example Example 314
+
+**Markdown input:**
+
+```markdown
+\[\]
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>\[\]
+</code></pre>
+```
+
+### Example Example 315
+
+**Markdown input:**
+
+```markdown
+~~~
+\[\]
+~~~
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>\[\]
+</code></pre>
+```
+
+### Example Example 316
+
+**Markdown input:**
+
+```markdown
+<http://example.com?find=\*>
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="http://example.com?find=%5C*">http://example.com?find=\*</a></p>
+```
+
+### Example Example 317
+
+**Markdown input:**
+
+```markdown
+<a href="/bar\/)">
+```
+
+**Expected HTML output:**
+
+```html
+<a href="/bar\/)">
+```
+
+### Example Example 318
+
+**Markdown input:**
+
+```markdown
+[foo](/bar\* "ti\*tle")
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/bar*" title="ti*tle">foo</a></p>
+```
+
+### Example Example 319
+
+**Markdown input:**
+
+```markdown
+[foo]
+
+[foo]: /bar\* "ti\*tle"
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/bar*" title="ti*tle">foo</a></p>
+```
+
+### Example Example 320
+
+**Markdown input:**
+
+```markdown
+``` foo\+bar
+foo
+```
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code class="language-foo+bar">foo
+</code></pre>
+```

@@ -1,0 +1,767 @@
+# Link reference definitions
+
+A link reference definition
+consists of a link label, indented up to three spaces, followed
+by a colon (:), optional whitespace (including up to one
+line ending), a link destination,
+optional whitespace (including up to one
+line ending), and an optional link
+title, which if it is present must be separated
+from the link destination by whitespace.
+No further non-whitespace characters may occur on the line.
+A link reference definition
+does not correspond to a structural element of a document.  Instead, it
+defines a label which can be used in reference links
+and reference-style images elsewhere in the document.  Link
+reference definitions can come either before or after the links that use
+them.
+
+[foo]: /url "title"
+
+[foo]
+
+<p><a href="/url" title="title">foo</a></p>
+
+   [foo]:
+      /url
+           'the title'
+
+[foo]
+
+<p><a href="/url" title="the title">foo</a></p>
+
+[Foo*bar\]]:my_(url) 'title (with parens)'
+
+[Foo*bar\]]
+
+<p><a href="my_(url)" title="title (with parens)">Foo*bar]</a></p>
+
+[Foo bar]:
+<my url>
+'title'
+
+[Foo bar]
+
+<p><a href="my%20url" title="title">Foo bar</a></p>
+
+The title may extend over multiple lines:
+
+[foo]: /url '
+title
+line1
+line2
+'
+
+[foo]
+
+<p><a href="/url" title="
+title
+line1
+line2
+">foo</a></p>
+
+However, it may not contain a blank line:
+
+[foo]: /url 'title
+
+with blank line'
+
+[foo]
+
+<p>[foo]: /url 'title</p>
+<p>with blank line'</p>
+<p>[foo]</p>
+
+The title may be omitted:
+
+[foo]:
+/url
+
+[foo]
+
+<p><a href="/url">foo</a></p>
+
+The link destination may not be omitted:
+
+[foo]:
+
+[foo]
+
+<p>[foo]:</p>
+<p>[foo]</p>
+
+However, an empty link destination may be specified using
+angle brackets:
+
+[foo]: <>
+
+[foo]
+
+<p><a href="">foo</a></p>
+
+The title must be separated from the link destination by
+whitespace:
+
+[foo]: <bar>(baz)
+
+[foo]
+
+<p>[foo]: <bar>(baz)</p>
+<p>[foo]</p>
+
+Both title and destination can contain backslash escapes
+and literal backslashes:
+
+[foo]: /url\bar\*baz "foo\"bar\baz"
+
+[foo]
+
+<p><a href="/url%5Cbar*baz" title="foo"bar\baz">foo</a></p>
+
+A link can come before its corresponding definition:
+
+[foo]
+
+[foo]: url
+
+<p><a href="url">foo</a></p>
+
+If there are several matching definitions, the first one takes
+precedence:
+
+[foo]
+
+[foo]: first
+[foo]: second
+
+<p><a href="first">foo</a></p>
+
+As noted in the section on Links, matching of labels is
+case-insensitive (see matches).
+
+[FOO]: /url
+
+[Foo]
+
+<p><a href="/url">Foo</a></p>
+
+[ΑΓΩ]: /φου
+
+[αγω]
+
+<p><a href="/%CF%86%CE%BF%CF%85">αγω</a></p>
+
+Here is a link reference definition with no corresponding link.
+It contributes nothing to the document.
+
+[foo]: /url
+
+Here is another one:
+
+[
+foo
+]: /url
+bar
+
+<p>bar</p>
+
+This is not a link reference definition, because there are
+non-whitespace characters after the title:
+
+[foo]: /url "title" ok
+
+<p>[foo]: /url "title" ok</p>
+
+This is a link reference definition, but it has no title:
+
+[foo]: /url
+"title" ok
+
+<p>"title" ok</p>
+
+This is not a link reference definition, because it is indented
+four spaces:
+
+    [foo]: /url "title"
+
+[foo]
+
+<pre><code>[foo]: /url "title"
+</code></pre>
+<p>[foo]</p>
+
+This is not a link reference definition, because it occurs inside
+a code block:
+
+```
+[foo]: /url
+```
+
+[foo]
+
+<pre><code>[foo]: /url
+</code></pre>
+<p>[foo]</p>
+
+A link reference definition cannot interrupt a paragraph.
+
+Foo
+[bar]: /baz
+
+[bar]
+
+<p>Foo
+[bar]: /baz</p>
+<p>[bar]</p>
+
+However, it can directly follow other block elements, such as headings
+and thematic breaks, and it need not be followed by a blank line.
+
+# [Foo]
+[foo]: /url
+> bar
+
+<h1><a href="/url">Foo</a></h1>
+<blockquote>
+<p>bar</p>
+</blockquote>
+
+[foo]: /url
+bar
+===
+[foo]
+
+<h1>bar</h1>
+<p><a href="/url">foo</a></p>
+
+[foo]: /url
+===
+[foo]
+
+<p>===
+<a href="/url">foo</a></p>
+
+Several link reference definitions
+can occur one after another, without intervening blank lines.
+
+[foo]: /foo-url "foo"
+[bar]: /bar-url
+  "bar"
+[baz]: /baz-url
+
+[foo],
+[bar],
+[baz]
+
+<p><a href="/foo-url" title="foo">foo</a>,
+<a href="/bar-url" title="bar">bar</a>,
+<a href="/baz-url">baz</a></p>
+
+Link reference definitions can occur
+inside block containers, like lists and block quotations.  They
+affect the entire document, not just the container in which they
+are defined:
+
+[foo]
+
+> [foo]: /url
+
+<p><a href="/url">foo</a></p>
+<blockquote>
+</blockquote>
+
+Whether something is a link reference definition is
+independent of whether the link reference it defines is
+used in the document.  Thus, for example, the following
+document contains just a link reference definition, and
+no visible content:
+
+[foo]: /url
+
+---
+
+### Example Example 161
+
+**Markdown input:**
+
+```markdown
+[foo]: /url "title"
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url" title="title">foo</a></p>
+```
+
+### Example Example 162
+
+**Markdown input:**
+
+```markdown
+[foo]: 
+      /url  
+           'the title'  
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url" title="the title">foo</a></p>
+```
+
+### Example Example 163
+
+**Markdown input:**
+
+```markdown
+[Foo*bar\]]:my_(url) 'title (with parens)'
+
+[Foo*bar\]]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="my_(url)" title="title (with parens)">Foo*bar]</a></p>
+```
+
+### Example Example 164
+
+**Markdown input:**
+
+```markdown
+[Foo bar]:
+<my url>
+'title'
+
+[Foo bar]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="my%20url" title="title">Foo bar</a></p>
+```
+
+### Example Example 165
+
+**Markdown input:**
+
+```markdown
+[foo]: /url '
+title
+line1
+line2
+'
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url" title="
+title
+line1
+line2
+">foo</a></p>
+```
+
+### Example Example 166
+
+**Markdown input:**
+
+```markdown
+[foo]: /url 'title
+
+with blank line'
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p>[foo]: /url 'title</p>
+<p>with blank line'</p>
+<p>[foo]</p>
+```
+
+### Example Example 167
+
+**Markdown input:**
+
+```markdown
+[foo]:
+/url
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url">foo</a></p>
+```
+
+### Example Example 168
+
+**Markdown input:**
+
+```markdown
+[foo]:
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p>[foo]:</p>
+<p>[foo]</p>
+```
+
+### Example Example 169
+
+**Markdown input:**
+
+```markdown
+[foo]: <>
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="">foo</a></p>
+```
+
+### Example Example 170
+
+**Markdown input:**
+
+```markdown
+[foo]: <bar>(baz)
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p>[foo]: <bar>(baz)</p>
+<p>[foo]</p>
+```
+
+### Example Example 171
+
+**Markdown input:**
+
+```markdown
+[foo]: /url\bar\*baz "foo\"bar\baz"
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url%5Cbar*baz" title="foo&quot;bar\baz">foo</a></p>
+```
+
+### Example Example 172
+
+**Markdown input:**
+
+```markdown
+[foo]
+
+[foo]: url
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="url">foo</a></p>
+```
+
+### Example Example 173
+
+**Markdown input:**
+
+```markdown
+[foo]
+
+[foo]: first
+[foo]: second
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="first">foo</a></p>
+```
+
+### Example Example 174
+
+**Markdown input:**
+
+```markdown
+[FOO]: /url
+
+[Foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url">Foo</a></p>
+```
+
+### Example Example 175
+
+**Markdown input:**
+
+```markdown
+[ΑΓΩ]: /φου
+
+[αγω]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/%CF%86%CE%BF%CF%85">αγω</a></p>
+```
+
+### Example Example 176
+
+**Markdown input:**
+
+```markdown
+[foo]: /url
+```
+
+**Expected HTML output:**
+
+```html
+
+```
+
+### Example Example 177
+
+**Markdown input:**
+
+```markdown
+[
+foo
+]: /url
+bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>bar</p>
+```
+
+### Example Example 178
+
+**Markdown input:**
+
+```markdown
+[foo]: /url "title" ok
+```
+
+**Expected HTML output:**
+
+```html
+<p>[foo]: /url &quot;title&quot; ok</p>
+```
+
+### Example Example 179
+
+**Markdown input:**
+
+```markdown
+[foo]: /url
+"title" ok
+```
+
+**Expected HTML output:**
+
+```html
+<p>&quot;title&quot; ok</p>
+```
+
+### Example Example 180
+
+**Markdown input:**
+
+```markdown
+[foo]: /url "title"
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>[foo]: /url &quot;title&quot;
+</code></pre>
+<p>[foo]</p>
+```
+
+### Example Example 181
+
+**Markdown input:**
+
+```markdown
+```
+[foo]: /url
+```
+
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>[foo]: /url
+</code></pre>
+<p>[foo]</p>
+```
+
+### Example Example 182
+
+**Markdown input:**
+
+```markdown
+Foo
+[bar]: /baz
+
+[bar]
+```
+
+**Expected HTML output:**
+
+```html
+<p>Foo
+[bar]: /baz</p>
+<p>[bar]</p>
+```
+
+### Example Example 183
+
+**Markdown input:**
+
+```markdown
+# [Foo]
+[foo]: /url
+> bar
+```
+
+**Expected HTML output:**
+
+```html
+<h1><a href="/url">Foo</a></h1>
+<blockquote>
+<p>bar</p>
+</blockquote>
+```
+
+### Example Example 184
+
+**Markdown input:**
+
+```markdown
+[foo]: /url
+bar
+===
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<h1>bar</h1>
+<p><a href="/url">foo</a></p>
+```
+
+### Example Example 185
+
+**Markdown input:**
+
+```markdown
+[foo]: /url
+===
+[foo]
+```
+
+**Expected HTML output:**
+
+```html
+<p>===
+<a href="/url">foo</a></p>
+```
+
+### Example Example 186
+
+**Markdown input:**
+
+```markdown
+[foo]: /foo-url "foo"
+[bar]: /bar-url
+  "bar"
+[baz]: /baz-url
+
+[foo],
+[bar],
+[baz]
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/foo-url" title="foo">foo</a>,
+<a href="/bar-url" title="bar">bar</a>,
+<a href="/baz-url">baz</a></p>
+```
+
+### Example Example 187
+
+**Markdown input:**
+
+```markdown
+[foo]
+
+> [foo]: /url
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/url">foo</a></p>
+<blockquote>
+</blockquote>
+```
+
+### Example Example 188
+
+**Markdown input:**
+
+```markdown
+[foo]: /url
+```
+
+**Expected HTML output:**
+
+```html
+
+```

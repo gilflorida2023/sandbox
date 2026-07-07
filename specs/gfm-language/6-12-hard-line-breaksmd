@@ -1,0 +1,336 @@
+# Hard line breaks
+
+A line break (not in a code span or HTML tag) that is preceded
+by two or more spaces and does not occur at the end of a block
+is parsed as a hard line break (rendered
+in HTML as a <br /> tag):
+
+foo
+baz
+
+<p>foo<br />
+baz</p>
+
+For a more visible alternative, a backslash before the
+line ending may be used instead of two spaces:
+
+foo\
+baz
+
+<p>foo<br />
+baz</p>
+
+More than two spaces can be used:
+
+foo
+baz
+
+<p>foo<br />
+baz</p>
+
+Leading spaces at the beginning of the next line are ignored:
+
+foo
+     bar
+
+<p>foo<br />
+bar</p>
+
+foo\
+     bar
+
+<p>foo<br />
+bar</p>
+
+Line breaks can occur inside emphasis, links, and other constructs
+that allow inline content:
+
+*foo
+bar*
+
+<p><em>foo<br />
+bar</em></p>
+
+*foo\
+bar*
+
+<p><em>foo<br />
+bar</em></p>
+
+Line breaks do not occur inside code spans
+
+`code
+span`
+
+<p><code>code   span</code></p>
+
+`code\
+span`
+
+<p><code>code\ span</code></p>
+
+or HTML tags:
+
+<a href="foo
+bar">
+
+<p><a href="foo
+bar"></p>
+
+<a href="foo\
+bar">
+
+<p><a href="foo\
+bar"></p>
+
+Hard line breaks are for separating inline content within a block.
+Neither syntax for hard line breaks works at the end of a paragraph or
+other block element:
+
+foo\
+
+<p>foo\</p>
+
+foo
+
+<p>foo</p>
+
+### foo\
+
+<h3>foo\</h3>
+
+### foo
+
+<h3>foo</h3>
+
+---
+
+### Example Example 658
+
+**Markdown input:**
+
+```markdown
+foo  
+baz
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+baz</p>
+```
+
+### Example Example 659
+
+**Markdown input:**
+
+```markdown
+foo\
+baz
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+baz</p>
+```
+
+### Example Example 660
+
+**Markdown input:**
+
+```markdown
+foo       
+baz
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+baz</p>
+```
+
+### Example Example 661
+
+**Markdown input:**
+
+```markdown
+foo  
+     bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+bar</p>
+```
+
+### Example Example 662
+
+**Markdown input:**
+
+```markdown
+foo\
+     bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<br />
+bar</p>
+```
+
+### Example Example 663
+
+**Markdown input:**
+
+```markdown
+*foo  
+bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo<br />
+bar</em></p>
+```
+
+### Example Example 664
+
+**Markdown input:**
+
+```markdown
+*foo\
+bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo<br />
+bar</em></p>
+```
+
+### Example Example 665
+
+**Markdown input:**
+
+```markdown
+`code  
+span`
+```
+
+**Expected HTML output:**
+
+```html
+<p><code>code   span</code></p>
+```
+
+### Example Example 666
+
+**Markdown input:**
+
+```markdown
+`code\
+span`
+```
+
+**Expected HTML output:**
+
+```html
+<p><code>code\ span</code></p>
+```
+
+### Example Example 667
+
+**Markdown input:**
+
+```markdown
+<a href="foo  
+bar">
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="foo  
+bar"></p>
+```
+
+### Example Example 668
+
+**Markdown input:**
+
+```markdown
+<a href="foo\
+bar">
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="foo\
+bar"></p>
+```
+
+### Example Example 669
+
+**Markdown input:**
+
+```markdown
+foo\
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo\</p>
+```
+
+### Example Example 670
+
+**Markdown input:**
+
+```markdown
+foo
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo</p>
+```
+
+### Example Example 671
+
+**Markdown input:**
+
+```markdown
+### foo\
+```
+
+**Expected HTML output:**
+
+```html
+<h3>foo\</h3>
+```
+
+### Example Example 672
+
+**Markdown input:**
+
+```markdown
+### foo
+```
+
+**Expected HTML output:**
+
+```html
+<h3>foo</h3>
+```

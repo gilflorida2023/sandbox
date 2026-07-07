@@ -1,0 +1,504 @@
+# Raw HTML
+
+Text between < and > that looks like an HTML tag is parsed as a
+raw HTML tag and will be rendered in HTML without escaping.
+Tag and attribute names are not limited to current HTML tags,
+so custom tags (and even, say, DocBook tags) may be used.
+Here is the grammar for tags:
+A tag name consists of an ASCII letter
+followed by zero or more ASCII letters, digits, or
+hyphens (-).
+An attribute consists of whitespace,
+an attribute name, and an optional
+attribute value specification.
+An attribute name
+consists of an ASCII letter, _, or :, followed by zero or more ASCII
+letters, digits, _, ., :, or -.  (Note:  This is the XML
+specification restricted to ASCII.  HTML5 is laxer.)
+An attribute value specification
+consists of optional whitespace,
+a = character, optional whitespace, and an attribute
+value.
+An attribute value
+consists of an unquoted attribute value,
+a single-quoted attribute value, or a double-quoted attribute value.
+An unquoted attribute value
+is a nonempty string of characters not
+including whitespace, ", ', =, <, >, or `.
+A single-quoted attribute value
+consists of ', zero or more
+characters not including ', and a final '.
+A double-quoted attribute value
+consists of ", zero or more
+characters not including ", and a final ".
+An open tag consists of a < character, a tag name,
+zero or more attributes, optional whitespace, an optional /
+character, and a > character.
+A closing tag consists of the string </, a
+tag name, optional whitespace, and the character >.
+An HTML comment consists of <!-- + text + -->,
+where text does not start with > or ->, does not end with -,
+and does not contain --.  (See the
+HTML5 spec.)
+A processing instruction
+consists of the string <?, a string
+of characters not including the string ?>, and the string
+?>.
+A declaration consists of the
+string <!, a name consisting of one or more uppercase ASCII letters,
+whitespace, a string of characters not including the
+character >, and the character >.
+A CDATA section consists of
+the string <![CDATA[, a string of characters not including the string
+]]>, and the string ]]>.
+An HTML tag consists of an open tag, a closing tag,
+an HTML comment, a processing instruction, a declaration,
+or a CDATA section.
+Here are some simple open tags:
+
+<a><bab><c2c>
+
+<p><a><bab><c2c></p>
+
+Empty elements:
+
+<a/><b2/>
+
+<p><a/><b2/></p>
+
+Whitespace is allowed:
+
+<a  /><b2
+data="foo" >
+
+<p><a  /><b2
+data="foo" ></p>
+
+With attributes:
+
+<a foo="bar" bam = 'baz <em>"</em>'
+_boolean zoop:33=zoop:33 />
+
+<p><a foo="bar" bam = 'baz <em>"</em>'
+_boolean zoop:33=zoop:33 /></p>
+
+Custom tag names can be used:
+
+Foo <responsive-image src="foo.jpg" />
+
+<p>Foo <responsive-image src="foo.jpg" /></p>
+
+Illegal tag names, not parsed as HTML:
+
+<33> <__>
+
+<p><33> <__></p>
+
+Illegal attribute names:
+
+<a h*#ref="hi">
+
+<p><a h*#ref="hi"></p>
+
+Illegal attribute values:
+
+<a href="hi'> <a href=hi'>
+
+<p><a href="hi'> <a href=hi'></p>
+
+Illegal whitespace:
+
+< a><
+foo><bar/ >
+<foo bar=baz
+bim!bop />
+
+<p>< a><
+foo><bar/ >
+<foo bar=baz
+bim!bop /></p>
+
+Missing whitespace:
+
+<a href='bar'title=title>
+
+<p><a href='bar'title=title></p>
+
+Closing tags:
+
+</a></foo >
+
+<p></a></foo ></p>
+
+Illegal attributes in closing tag:
+
+</a href="foo">
+
+<p></a href="foo"></p>
+
+Comments:
+
+foo <!-- this is a
+comment - with hyphen -->
+
+<p>foo <!-- this is a
+comment - with hyphen --></p>
+
+foo <!-- not a comment -- two hyphens -->
+
+<p>foo <!-- not a comment -- two hyphens --></p>
+
+Not comments:
+
+foo <!--> foo -->
+
+foo <!-- foo--->
+
+<p>foo <!--> foo --></p>
+<p>foo <!-- foo---></p>
+
+Processing instructions:
+
+foo <?php echo $a; ?>
+
+<p>foo <?php echo $a; ?></p>
+
+Declarations:
+
+foo <!ELEMENT br EMPTY>
+
+<p>foo <!ELEMENT br EMPTY></p>
+
+CDATA sections:
+
+foo <![CDATA[>&<]]>
+
+<p>foo <![CDATA[>&<]]></p>
+
+Entity and numeric character references are preserved in HTML
+attributes:
+
+foo <a href="&ouml;">
+
+<p>foo <a href="&ouml;"></p>
+
+Backslash escapes do not work in HTML attributes:
+
+foo <a href="\*">
+
+<p>foo <a href="\*"></p>
+
+<a href="\"">
+
+<p><a href="""></p>
+
+---
+
+### Example Example 636
+
+**Markdown input:**
+
+```markdown
+<a><bab><c2c>
+```
+
+**Expected HTML output:**
+
+```html
+<p><a><bab><c2c></p>
+```
+
+### Example Example 637
+
+**Markdown input:**
+
+```markdown
+<a/><b2/>
+```
+
+**Expected HTML output:**
+
+```html
+<p><a/><b2/></p>
+```
+
+### Example Example 638
+
+**Markdown input:**
+
+```markdown
+<a  /><b2
+data="foo" >
+```
+
+**Expected HTML output:**
+
+```html
+<p><a  /><b2
+data="foo" ></p>
+```
+
+### Example Example 639
+
+**Markdown input:**
+
+```markdown
+<a foo="bar" bam = 'baz <em>"</em>'
+_boolean zoop:33=zoop:33 />
+```
+
+**Expected HTML output:**
+
+```html
+<p><a foo="bar" bam = 'baz <em>"</em>'
+_boolean zoop:33=zoop:33 /></p>
+```
+
+### Example Example 640
+
+**Markdown input:**
+
+```markdown
+Foo <responsive-image src="foo.jpg" />
+```
+
+**Expected HTML output:**
+
+```html
+<p>Foo <responsive-image src="foo.jpg" /></p>
+```
+
+### Example Example 641
+
+**Markdown input:**
+
+```markdown
+<33> <__>
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;33&gt; &lt;__&gt;</p>
+```
+
+### Example Example 642
+
+**Markdown input:**
+
+```markdown
+<a h*#ref="hi">
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;a h*#ref=&quot;hi&quot;&gt;</p>
+```
+
+### Example Example 643
+
+**Markdown input:**
+
+```markdown
+<a href="hi'> <a href=hi'>
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;a href=&quot;hi'&gt; &lt;a href=hi'&gt;</p>
+```
+
+### Example Example 644
+
+**Markdown input:**
+
+```markdown
+< a><
+foo><bar/ >
+<foo bar=baz
+bim!bop />
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt; a&gt;&lt;
+foo&gt;&lt;bar/ &gt;
+&lt;foo bar=baz
+bim!bop /&gt;</p>
+```
+
+### Example Example 645
+
+**Markdown input:**
+
+```markdown
+<a href='bar'title=title>
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;a href='bar'title=title&gt;</p>
+```
+
+### Example Example 646
+
+**Markdown input:**
+
+```markdown
+</a></foo >
+```
+
+**Expected HTML output:**
+
+```html
+<p></a></foo ></p>
+```
+
+### Example Example 647
+
+**Markdown input:**
+
+```markdown
+</a href="foo">
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;/a href=&quot;foo&quot;&gt;</p>
+```
+
+### Example Example 648
+
+**Markdown input:**
+
+```markdown
+foo <!-- this is a
+comment - with hyphen -->
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <!-- this is a
+comment - with hyphen --></p>
+```
+
+### Example Example 649
+
+**Markdown input:**
+
+```markdown
+foo <!-- not a comment -- two hyphens -->
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo &lt;!-- not a comment -- two hyphens --&gt;</p>
+```
+
+### Example Example 650
+
+**Markdown input:**
+
+```markdown
+foo <!--> foo -->
+
+foo <!-- foo--->
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo &lt;!--&gt; foo --&gt;</p>
+<p>foo &lt;!-- foo---&gt;</p>
+```
+
+### Example Example 651
+
+**Markdown input:**
+
+```markdown
+foo <?php echo $a; ?>
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <?php echo $a; ?></p>
+```
+
+### Example Example 652
+
+**Markdown input:**
+
+```markdown
+foo <!ELEMENT br EMPTY>
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <!ELEMENT br EMPTY></p>
+```
+
+### Example Example 653
+
+**Markdown input:**
+
+```markdown
+foo <![CDATA[>&<]]>
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <![CDATA[>&<]]></p>
+```
+
+### Example Example 654
+
+**Markdown input:**
+
+```markdown
+foo <a href="&ouml;">
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <a href="&ouml;"></p>
+```
+
+### Example Example 655
+
+**Markdown input:**
+
+```markdown
+foo <a href="\*">
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <a href="\*"></p>
+```
+
+### Example Example 656
+
+**Markdown input:**
+
+```markdown
+<a href="\"">
+```
+
+**Expected HTML output:**
+
+```html
+<p>&lt;a href=&quot;&quot;&quot;&gt;</p>
+```

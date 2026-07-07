@@ -1,0 +1,253 @@
+# Container blocks
+
+A container block is a block that has other
+blocks as its contents.  There are two basic kinds of container blocks:
+block quotes and list items.
+Lists are meta-containers for list items.
+We define the syntax for container blocks recursively.  The general
+form of the definition is:
+
+If X is a sequence of blocks, then the result of
+transforming X in such-and-such a way is a container of type Y
+with these blocks as its content.
+
+So, we explain what counts as a block quote or list item by explaining
+how these can be generated from their contents. This should suffice
+to define the syntax, although it does not give a recipe for parsing
+these constructions.  (A recipe is provided below in the section entitled
+A parsing strategy.)
+
+---
+
+### Example Example 198
+
+**Markdown input:**
+
+```markdown
+| foo | bar |
+| --- | --- |
+| baz | bim |
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>foo</th>
+<th>bar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>baz</td>
+<td>bim</td>
+</tr>
+</tbody>
+</table>
+```
+
+### Example Example 199
+
+**Markdown input:**
+
+```markdown
+| abc | defghi |
+:-: | -----------:
+bar | baz
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th align="center">abc</th>
+<th align="right">defghi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">bar</td>
+<td align="right">baz</td>
+</tr>
+</tbody>
+</table>
+```
+
+### Example Example 200
+
+**Markdown input:**
+
+```markdown
+| f\|oo  |
+| ------ |
+| b `\|` az |
+| b **\|** im |
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>f|oo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>b <code>|</code> az</td>
+</tr>
+<tr>
+<td>b <strong>|</strong> im</td>
+</tr>
+</tbody>
+</table>
+```
+
+### Example Example 201
+
+**Markdown input:**
+
+```markdown
+| abc | def |
+| --- | --- |
+| bar | baz |
+> bar
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>abc</th>
+<th>def</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bar</td>
+<td>baz</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>bar</p>
+</blockquote>
+```
+
+### Example Example 202
+
+**Markdown input:**
+
+```markdown
+| abc | def |
+| --- | --- |
+| bar | baz |
+bar
+
+bar
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>abc</th>
+<th>def</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bar</td>
+<td>baz</td>
+</tr>
+<tr>
+<td>bar</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>bar</p>
+```
+
+### Example Example 203
+
+**Markdown input:**
+
+```markdown
+| abc | def |
+| --- |
+| bar |
+```
+
+**Expected HTML output:**
+
+```html
+<p>| abc | def |
+| --- |
+| bar |</p>
+```
+
+### Example Example 204
+
+**Markdown input:**
+
+```markdown
+| abc | def |
+| --- | --- |
+| bar |
+| bar | baz | boo |
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>abc</th>
+<th>def</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bar</td>
+<td></td>
+</tr>
+<tr>
+<td>bar</td>
+<td>baz</td>
+</tr>
+</tbody>
+</table>
+```
+
+### Example Example 205
+
+**Markdown input:**
+
+```markdown
+| abc | def |
+| --- | --- |
+```
+
+**Expected HTML output:**
+
+```html
+<table>
+<thead>
+<tr>
+<th>abc</th>
+<th>def</th>
+</tr>
+</thead>
+</table>
+```

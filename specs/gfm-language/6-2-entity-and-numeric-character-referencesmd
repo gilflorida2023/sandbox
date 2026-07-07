@@ -1,0 +1,416 @@
+# Entity and numeric character references
+
+Valid HTML entity references and numeric character references
+can be used in place of the corresponding Unicode character,
+with the following exceptions:
+
+Entity and character references are not recognized in code
+blocks and code spans.
+
+Entity and character references cannot stand in place of
+special characters that define structural elements in
+CommonMark.  For example, although &#42; can be used
+in place of a literal * character, &#42; cannot replace
+* in emphasis delimiters, bullet list markers, or thematic
+breaks.
+
+Conforming CommonMark parsers need not store information about
+whether a particular character was represented in the source
+using a Unicode character or an entity reference.
+Entity references consist of & + any of the valid
+HTML5 entity names + ;. The
+document https://html.spec.whatwg.org/multipage/entities.json
+is used as an authoritative source for the valid entity
+references and their corresponding code points.
+
+&nbsp; & &copy; &AElig; &Dcaron;
+&frac34; &HilbertSpace; &DifferentialD;
+&ClockwiseContourIntegral; &ngE;
+
+<p>  & © Æ Ď
+¾ ℋ ⅆ
+∲ ≧̸</p>
+
+Decimal numeric character
+references
+consist of &# + a string of 1–7 arabic digits + ;. A
+numeric character reference is parsed as the corresponding
+Unicode character. Invalid Unicode code points will be replaced by
+the REPLACEMENT CHARACTER (U+FFFD).  For security reasons,
+the code point U+0000 will also be replaced by U+FFFD.
+
+&#35; &#1234; &#992; &#0;
+
+<p># Ӓ Ϡ �</p>
+
+Hexadecimal numeric character
+references consist of &# +
+either X or x + a string of 1-6 hexadecimal digits + ;.
+They too are parsed as the corresponding Unicode character (this
+time specified with a hexadecimal numeral instead of decimal).
+
+&#X22; &#XD06; &#xcab;
+
+<p>" ആ ಫ</p>
+
+Here are some nonentities:
+
+&nbsp &x; &#; &#x;
+&#87654321;
+&#abcdef0;
+&ThisIsNotDefined; &hi?;
+
+<p>&nbsp &x; &#; &#x;
+&#87654321;
+&#abcdef0;
+&ThisIsNotDefined; &hi?;</p>
+
+Although HTML5 does accept some entity references
+without a trailing semicolon (such as &copy), these are not
+recognized here, because it makes the grammar too ambiguous:
+
+&copy
+
+<p>&copy</p>
+
+Strings that are not on the list of HTML5 named entities are not
+recognized as entity references either:
+
+&MadeUpEntity;
+
+<p>&MadeUpEntity;</p>
+
+Entity and numeric character references are recognized in any
+context besides code spans or code blocks, including
+URLs, link titles, and fenced code block info strings:
+
+<a href="&ouml;&ouml;.html">
+
+<a href="&ouml;&ouml;.html">
+
+[foo](/f&ouml;&ouml; "f&ouml;&ouml;")
+
+<p><a href="/f%C3%B6%C3%B6" title="föö">foo</a></p>
+
+[foo]
+
+[foo]: /f&ouml;&ouml; "f&ouml;&ouml;"
+
+<p><a href="/f%C3%B6%C3%B6" title="föö">foo</a></p>
+
+``` f&ouml;&ouml;
+foo
+```
+
+<pre><code class="language-föö">foo
+</code></pre>
+
+Entity and numeric character references are treated as literal
+text in code spans and code blocks:
+
+`f&ouml;&ouml;`
+
+<p><code>f&ouml;&ouml;</code></p>
+
+    f&ouml;f&ouml;
+
+<pre><code>f&ouml;f&ouml;
+</code></pre>
+
+Entity and numeric character references cannot be used
+in place of symbols indicating structure in CommonMark
+documents.
+
+&#42;foo&#42;
+*foo*
+
+<p>*foo*
+<em>foo</em></p>
+
+&#42; foo
+
+* foo
+
+<p>* foo</p>
+<ul>
+<li>foo</li>
+</ul>
+
+foo&#10;&#10;bar
+
+<p>foo
+
+bar</p>
+
+&#9;foo
+
+<p>→foo</p>
+
+[a](url "tit")
+
+<p>[a](url "tit")</p>
+
+---
+
+### Example Example 321
+
+**Markdown input:**
+
+```markdown
+&nbsp; &amp; &copy; &AElig; &Dcaron;
+&frac34; &HilbertSpace; &DifferentialD;
+&ClockwiseContourIntegral; &ngE;
+```
+
+**Expected HTML output:**
+
+```html
+<p>  &amp; © Æ Ď
+¾ ℋ ⅆ
+∲ ≧̸</p>
+```
+
+### Example Example 322
+
+**Markdown input:**
+
+```markdown
+&#35; &#1234; &#992; &#0;
+```
+
+**Expected HTML output:**
+
+```html
+<p># Ӓ Ϡ �</p>
+```
+
+### Example Example 323
+
+**Markdown input:**
+
+```markdown
+&#X22; &#XD06; &#xcab;
+```
+
+**Expected HTML output:**
+
+```html
+<p>&quot; ആ ಫ</p>
+```
+
+### Example Example 324
+
+**Markdown input:**
+
+```markdown
+&nbsp &x; &#; &#x;
+&#87654321;
+&#abcdef0;
+&ThisIsNotDefined; &hi?;
+```
+
+**Expected HTML output:**
+
+```html
+<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;
+&amp;#87654321;
+&amp;#abcdef0;
+&amp;ThisIsNotDefined; &amp;hi?;</p>
+```
+
+### Example Example 325
+
+**Markdown input:**
+
+```markdown
+&copy
+```
+
+**Expected HTML output:**
+
+```html
+<p>&amp;copy</p>
+```
+
+### Example Example 326
+
+**Markdown input:**
+
+```markdown
+&MadeUpEntity;
+```
+
+**Expected HTML output:**
+
+```html
+<p>&amp;MadeUpEntity;</p>
+```
+
+### Example Example 327
+
+**Markdown input:**
+
+```markdown
+<a href="&ouml;&ouml;.html">
+```
+
+**Expected HTML output:**
+
+```html
+<a href="&ouml;&ouml;.html">
+```
+
+### Example Example 328
+
+**Markdown input:**
+
+```markdown
+[foo](/f&ouml;&ouml; "f&ouml;&ouml;")
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/f%C3%B6%C3%B6" title="föö">foo</a></p>
+```
+
+### Example Example 329
+
+**Markdown input:**
+
+```markdown
+[foo]
+
+[foo]: /f&ouml;&ouml; "f&ouml;&ouml;"
+```
+
+**Expected HTML output:**
+
+```html
+<p><a href="/f%C3%B6%C3%B6" title="föö">foo</a></p>
+```
+
+### Example Example 330
+
+**Markdown input:**
+
+```markdown
+``` f&ouml;&ouml;
+foo
+```
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code class="language-föö">foo
+</code></pre>
+```
+
+### Example Example 331
+
+**Markdown input:**
+
+```markdown
+`f&ouml;&ouml;`
+```
+
+**Expected HTML output:**
+
+```html
+<p><code>f&amp;ouml;&amp;ouml;</code></p>
+```
+
+### Example Example 332
+
+**Markdown input:**
+
+```markdown
+f&ouml;f&ouml;
+```
+
+**Expected HTML output:**
+
+```html
+<pre><code>f&amp;ouml;f&amp;ouml;
+</code></pre>
+```
+
+### Example Example 333
+
+**Markdown input:**
+
+```markdown
+&#42;foo&#42;
+*foo*
+```
+
+**Expected HTML output:**
+
+```html
+<p>*foo*
+<em>foo</em></p>
+```
+
+### Example Example 334
+
+**Markdown input:**
+
+```markdown
+&#42; foo
+
+* foo
+```
+
+**Expected HTML output:**
+
+```html
+<p>* foo</p>
+<ul>
+<li>foo</li>
+</ul>
+```
+
+### Example Example 335
+
+**Markdown input:**
+
+```markdown
+foo&#10;&#10;bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo
+
+bar</p>
+```
+
+### Example Example 336
+
+**Markdown input:**
+
+```markdown
+&#9;foo
+```
+
+**Expected HTML output:**
+
+```html
+<p>→foo</p>
+```
+
+### Example Example 337
+
+**Markdown input:**
+
+```markdown
+[a](url &quot;tit&quot;)
+```
+
+**Expected HTML output:**
+
+```html
+<p>[a](url &quot;tit&quot;)</p>
+```

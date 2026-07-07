@@ -1,0 +1,73 @@
+# Strikethrough (extension)
+
+GFM enables the strikethrough extension, where an additional emphasis type is
+available.
+Strikethrough text is any text wrapped in a matching pair of one or two tildes
+(~).
+
+~~Hi~~ Hello, ~there~ world!
+
+<p><del>Hi</del> Hello, <del>there</del> world!</p>
+
+As with regular emphasis delimiters, a new paragraph will cause strikethrough
+parsing to cease:
+
+This ~~has a
+
+new paragraph~~.
+
+<p>This ~~has a</p>
+<p>new paragraph~~.</p>
+
+Three or more tildes do not create a strikethrough:
+
+This will ~~~not~~~ strike.
+
+<p>This will ~~~not~~~ strike.</p>
+
+---
+
+### Example Example 491
+
+**Markdown input:**
+
+```markdown
+~~Hi~~ Hello, ~there~ world!
+```
+
+**Expected HTML output:**
+
+```html
+<p><del>Hi</del> Hello, <del>there</del> world!</p>
+```
+
+### Example Example 492
+
+**Markdown input:**
+
+```markdown
+This ~~has a
+
+new paragraph~~.
+```
+
+**Expected HTML output:**
+
+```html
+<p>This ~~has a</p>
+<p>new paragraph~~.</p>
+```
+
+### Example Example 493
+
+**Markdown input:**
+
+```markdown
+This will ~~~not~~~ strike.
+```
+
+**Expected HTML output:**
+
+```html
+<p>This will ~~~not~~~ strike.</p>
+```

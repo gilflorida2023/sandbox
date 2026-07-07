@@ -1,0 +1,346 @@
+[
+  {
+    "file": "1-introductionmd",
+    "title": "Introduction",
+    "number": "1",
+    "level": 1,
+    "examples": 0,
+    "size": 16
+  },
+  {
+    "file": "1-1-what-is-github-flavored-markdown-md",
+    "title": "What is GitHub Flavored Markdown?",
+    "number": "1.1",
+    "level": 2,
+    "examples": 0,
+    "size": 750
+  },
+  {
+    "file": "1-2-what-is-markdown-md",
+    "title": "What is Markdown?",
+    "number": "1.2",
+    "level": 2,
+    "examples": 0,
+    "size": 2761
+  },
+  {
+    "file": "1-3-why-is-a-spec-needed-md",
+    "title": "Why is a spec needed?",
+    "number": "1.3",
+    "level": 2,
+    "examples": 0,
+    "size": 3551
+  },
+  {
+    "file": "1-4-about-this-documentmd",
+    "title": "About this document",
+    "number": "1.4",
+    "level": 2,
+    "examples": 0,
+    "size": 1095
+  },
+  {
+    "file": "2-preliminariesmd",
+    "title": "Preliminaries",
+    "number": "2",
+    "level": 1,
+    "examples": 0,
+    "size": 17
+  },
+  {
+    "file": "2-1-characters-and-linesmd",
+    "title": "Characters and lines",
+    "number": "2.1",
+    "level": 2,
+    "examples": 0,
+    "size": 1828
+  },
+  {
+    "file": "2-2-tabsmd",
+    "title": "Tabs",
+    "number": "2.2",
+    "level": 2,
+    "examples": 11,
+    "size": 3290
+  },
+  {
+    "file": "2-3-insecure-charactersmd",
+    "title": "Insecure characters",
+    "number": "2.3",
+    "level": 2,
+    "examples": 0,
+    "size": 131
+  },
+  {
+    "file": "3-blocks-and-inlinesmd",
+    "title": "Blocks and inlines",
+    "number": "3",
+    "level": 1,
+    "examples": 0,
+    "size": 360
+  },
+  {
+    "file": "3-1-precedencemd",
+    "title": "Precedence",
+    "number": "3.1",
+    "level": 2,
+    "examples": 1,
+    "size": 975
+  },
+  {
+    "file": "3-2-container-blocks-and-leaf-blocksmd",
+    "title": "Container blocks and leaf blocks",
+    "number": "3.2",
+    "level": 2,
+    "examples": 0,
+    "size": 153
+  },
+  {
+    "file": "4-leaf-blocksmd",
+    "title": "Leaf blocks",
+    "number": "4",
+    "level": 1,
+    "examples": 0,
+    "size": 105
+  },
+  {
+    "file": "4-1-thematic-breaksmd",
+    "title": "Thematic breaks",
+    "number": "4.1",
+    "level": 2,
+    "examples": 19,
+    "size": 4556
+  },
+  {
+    "file": "4-2-atx-headingsmd",
+    "title": "ATX headings",
+    "number": "4.2",
+    "level": 2,
+    "examples": 18,
+    "size": 5542
+  },
+  {
+    "file": "4-3-setext-headingsmd",
+    "title": "Setext headings",
+    "number": "4.3",
+    "level": 2,
+    "examples": 27,
+    "size": 9022
+  },
+  {
+    "file": "4-4-indented-code-blocksmd",
+    "title": "Indented code blocks",
+    "number": "4.4",
+    "level": 2,
+    "examples": 12,
+    "size": 4417
+  },
+  {
+    "file": "4-5-fenced-code-blocksmd",
+    "title": "Fenced code blocks",
+    "number": "4.5",
+    "level": 2,
+    "examples": 29,
+    "size": 10122
+  },
+  {
+    "file": "4-6-html-blocksmd",
+    "title": "HTML blocks",
+    "number": "4.6",
+    "level": 2,
+    "examples": 43,
+    "size": 19624
+  },
+  {
+    "file": "4-7-link-reference-definitionsmd",
+    "title": "Link reference definitions",
+    "number": "4.7",
+    "level": 2,
+    "examples": 28,
+    "size": 9438
+  },
+  {
+    "file": "4-8-paragraphsmd",
+    "title": "Paragraphs",
+    "number": "4.8",
+    "level": 2,
+    "examples": 8,
+    "size": 2346
+  },
+  {
+    "file": "4-9-blank-linesmd",
+    "title": "Blank lines",
+    "number": "4.9",
+    "level": 2,
+    "examples": 1,
+    "size": 402
+  },
+  {
+    "file": "4-10-tables-extension-md",
+    "title": "Tables (extension)",
+    "number": "4.10",
+    "level": 2,
+    "examples": 0,
+    "size": 3081
+  },
+  {
+    "file": "5-container-blocksmd",
+    "title": "Container blocks",
+    "number": "5",
+    "level": 1,
+    "examples": 8,
+    "size": 3006
+  },
+  {
+    "file": "5-1-block-quotesmd",
+    "title": "Block quotes",
+    "number": "5.1",
+    "level": 2,
+    "examples": 25,
+    "size": 9487
+  },
+  {
+    "file": "5-2-list-itemsmd",
+    "title": "List items",
+    "number": "5.2",
+    "level": 2,
+    "examples": 48,
+    "size": 28046
+  },
+  {
+    "file": "5-3-task-list-items-extension-md",
+    "title": "Task list items (extension)",
+    "number": "5.3",
+    "level": 2,
+    "examples": 2,
+    "size": 2177
+  },
+  {
+    "file": "5-4-listsmd",
+    "title": "Lists",
+    "number": "5.4",
+    "level": 2,
+    "examples": 26,
+    "size": 12651
+  },
+  {
+    "file": "6-inlinesmd",
+    "title": "Inlines",
+    "number": "6",
+    "level": 1,
+    "examples": 1,
+    "size": 420
+  },
+  {
+    "file": "6-1-backslash-escapesmd",
+    "title": "Backslash escapes",
+    "number": "6.1",
+    "level": 2,
+    "examples": 13,
+    "size": 4075
+  },
+  {
+    "file": "6-2-entity-and-numeric-character-referencesmd",
+    "title": "Entity and numeric character references",
+    "number": "6.2",
+    "level": 2,
+    "examples": 17,
+    "size": 6190
+  },
+  {
+    "file": "6-3-code-spansmd",
+    "title": "Code spans",
+    "number": "6.3",
+    "level": 2,
+    "examples": 22,
+    "size": 6577
+  },
+  {
+    "file": "6-4-emphasis-and-strong-emphasismd",
+    "title": "Emphasis and strong emphasis",
+    "number": "6.4",
+    "level": 2,
+    "examples": 131,
+    "size": 37982
+  },
+  {
+    "file": "6-5-strikethrough-extension-md",
+    "title": "Strikethrough (extension)",
+    "number": "6.5",
+    "level": 2,
+    "examples": 3,
+    "size": 1110
+  },
+  {
+    "file": "6-6-linksmd",
+    "title": "Links",
+    "number": "6.6",
+    "level": 2,
+    "examples": 87,
+    "size": 32771
+  },
+  {
+    "file": "6-7-imagesmd",
+    "title": "Images",
+    "number": "6.7",
+    "level": 2,
+    "examples": 22,
+    "size": 7063
+  },
+  {
+    "file": "6-8-autolinksmd",
+    "title": "Autolinks",
+    "number": "6.8",
+    "level": 2,
+    "examples": 19,
+    "size": 6331
+  },
+  {
+    "file": "6-9-autolinks-extension-md",
+    "title": "Autolinks (extension)",
+    "number": "6.9",
+    "level": 2,
+    "examples": 14,
+    "size": 11336
+  },
+  {
+    "file": "6-10-raw-htmlmd",
+    "title": "Raw HTML",
+    "number": "6.10",
+    "level": 2,
+    "examples": 21,
+    "size": 7547
+  },
+  {
+    "file": "6-11-disallowed-raw-html-extension-md",
+    "title": "Disallowed Raw HTML (extension)",
+    "number": "6.11",
+    "level": 2,
+    "examples": 1,
+    "size": 1134
+  },
+  {
+    "file": "6-12-hard-line-breaksmd",
+    "title": "Hard line breaks",
+    "number": "6.12",
+    "level": 2,
+    "examples": 15,
+    "size": 3315
+  },
+  {
+    "file": "6-13-soft-line-breaksmd",
+    "title": "Soft line breaks",
+    "number": "6.13",
+    "level": 2,
+    "examples": 2,
+    "size": 894
+  },
+  {
+    "file": "6-14-textual-contentmd",
+    "title": "Textual content",
+    "number": "6.14",
+    "level": 2,
+    "examples": 3,
+    "size": 10790
+  }
+]

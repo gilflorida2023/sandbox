@@ -1,0 +1,2756 @@
+# Emphasis and strong emphasis
+
+John Gruber’s original Markdown syntax
+description says:
+
+Markdown treats asterisks (*) and underscores (_) as indicators of
+emphasis. Text wrapped with one * or _ will be wrapped with an HTML
+<em> tag; double *’s or _’s will be wrapped with an HTML <strong>
+tag.
+
+This is enough for most users, but these rules leave much undecided,
+especially when it comes to nested emphasis.  The original
+Markdown.pl test suite makes it clear that triple *** and
+___ delimiters can be used for strong emphasis, and most
+implementations have also allowed the following patterns:
+***strong emph***
+***strong** in emph*
+***emph* in strong**
+**in strong *emph***
+*in emph **strong***
+
+The following patterns are less widely supported, but the intent
+is clear and they are useful (especially in contexts like bibliography
+entries):
+*emph *with emph* in it*
+**strong **with strong** in it**
+
+Many implementations have also restricted intraword emphasis to
+the * forms, to avoid unwanted emphasis in words containing
+internal underscores.  (It is best practice to put these in code
+spans, but users often do not.)
+internal emphasis: foo*bar*baz
+no emphasis: foo_bar_baz
+
+The rules given below capture all of these patterns, while allowing
+for efficient parsing strategies that do not backtrack.
+First, some definitions.  A delimiter run is either
+a sequence of one or more * characters that is not preceded or
+followed by a non-backslash-escaped * character, or a sequence
+of one or more _ characters that is not preceded or followed by
+a non-backslash-escaped _ character.
+A left-flanking delimiter run is
+a delimiter run that is (1) not followed by Unicode whitespace,
+and either (2a) not followed by a punctuation character, or
+(2b) followed by a punctuation character and
+preceded by Unicode whitespace or a punctuation character.
+For purposes of this definition, the beginning and the end of
+the line count as Unicode whitespace.
+A right-flanking delimiter run is
+a delimiter run that is (1) not preceded by Unicode whitespace,
+and either (2a) not preceded by a punctuation character, or
+(2b) preceded by a punctuation character and
+followed by Unicode whitespace or a punctuation character.
+For purposes of this definition, the beginning and the end of
+the line count as Unicode whitespace.
+Here are some examples of delimiter runs.
+
+left-flanking but not right-flanking:
+***abc
+  _abc
+**"abc"
+ _"abc"
+
+right-flanking but not left-flanking:
+ abc***
+ abc_
+"abc"**
+"abc"_
+
+Both left and right-flanking:
+ abc***def
+"abc"_"def"
+
+Neither left nor right-flanking:
+abc *** def
+a _ b
+
+(The idea of distinguishing left-flanking and right-flanking
+delimiter runs based on the character before and the character
+after comes from Roopesh Chander’s
+vfmd.
+vfmd uses the terminology “emphasis indicator string” instead of “delimiter
+run,” and its rules for distinguishing left- and right-flanking runs
+are a bit more complex than the ones given here.)
+The following rules define emphasis and strong emphasis:
+
+A single * character can open emphasis
+iff (if and only if) it is part of a left-flanking delimiter run.
+
+A single _ character can open emphasis iff
+it is part of a left-flanking delimiter run
+and either (a) not part of a right-flanking delimiter run
+or (b) part of a right-flanking delimiter run
+preceded by punctuation.
+
+A single * character can close emphasis
+iff it is part of a right-flanking delimiter run.
+
+A single _ character can close emphasis iff
+it is part of a right-flanking delimiter run
+and either (a) not part of a left-flanking delimiter run
+or (b) part of a left-flanking delimiter run
+followed by punctuation.
+
+A double ** can open strong emphasis
+iff it is part of a left-flanking delimiter run.
+
+A double __ can open strong emphasis iff
+it is part of a left-flanking delimiter run
+and either (a) not part of a right-flanking delimiter run
+or (b) part of a right-flanking delimiter run
+preceded by punctuation.
+
+A double ** can close strong emphasis
+iff it is part of a right-flanking delimiter run.
+
+A double __ can close strong emphasis iff
+it is part of a right-flanking delimiter run
+and either (a) not part of a left-flanking delimiter run
+or (b) part of a left-flanking delimiter run
+followed by punctuation.
+
+Emphasis begins with a delimiter that can open emphasis and ends
+with a delimiter that can close emphasis, and that uses the same
+character (_ or *) as the opening delimiter.  The
+opening and closing delimiters must belong to separate
+delimiter runs.  If one of the delimiters can both
+open and close emphasis, then the sum of the lengths of the
+delimiter runs containing the opening and closing delimiters
+must not be a multiple of 3 unless both lengths are
+multiples of 3.
+
+Strong emphasis begins with a delimiter that
+can open strong emphasis and ends with a delimiter that
+can close strong emphasis, and that uses the same character
+(_ or *) as the opening delimiter.  The
+opening and closing delimiters must belong to separate
+delimiter runs.  If one of the delimiters can both open
+and close strong emphasis, then the sum of the lengths of
+the delimiter runs containing the opening and closing
+delimiters must not be a multiple of 3 unless both lengths
+are multiples of 3.
+
+A literal * character cannot occur at the beginning or end of
+*-delimited emphasis or **-delimited strong emphasis, unless it
+is backslash-escaped.
+
+A literal _ character cannot occur at the beginning or end of
+_-delimited emphasis or __-delimited strong emphasis, unless it
+is backslash-escaped.
+
+Where rules 1–12 above are compatible with multiple parsings,
+the following principles resolve ambiguity:
+
+The number of nestings should be minimized. Thus, for example,
+an interpretation <strong>...</strong> is always preferred to
+<em><em>...</em></em>.
+
+An interpretation <em><strong>...</strong></em> is always
+preferred to <strong><em>...</em></strong>.
+
+When two potential emphasis or strong emphasis spans overlap,
+so that the second begins before the first ends and ends after
+the first ends, the first takes precedence. Thus, for example,
+*foo _bar* baz_ is parsed as <em>foo _bar</em> baz_ rather
+than *foo <em>bar* baz</em>.
+
+When there are two potential emphasis or strong emphasis spans
+with the same closing delimiter, the shorter one (the one that
+opens later) takes precedence. Thus, for example,
+**foo **bar baz** is parsed as **foo <strong>bar baz</strong>
+rather than <strong>foo **bar baz</strong>.
+
+Inline code spans, links, images, and HTML tags group more tightly
+than emphasis.  So, when there is a choice between an interpretation
+that contains one of these elements and one that does not, the
+former always wins.  Thus, for example, *[foo*](bar) is
+parsed as *<a href="bar">foo*</a> rather than as
+<em>[foo</em>](bar).
+
+These rules can be illustrated through a series of examples.
+Rule 1:
+
+*foo bar*
+
+<p><em>foo bar</em></p>
+
+This is not emphasis, because the opening * is followed by
+whitespace, and hence not part of a left-flanking delimiter run:
+
+a * foo bar*
+
+<p>a * foo bar*</p>
+
+This is not emphasis, because the opening * is preceded
+by an alphanumeric and followed by punctuation, and hence
+not part of a left-flanking delimiter run:
+
+a*"foo"*
+
+<p>a*"foo"*</p>
+
+Unicode nonbreaking spaces count as whitespace, too:
+
+* a *
+
+<p>* a *</p>
+
+Intraword emphasis with * is permitted:
+
+foo*bar*
+
+<p>foo<em>bar</em></p>
+
+5*6*78
+
+<p>5<em>6</em>78</p>
+
+Rule 2:
+
+_foo bar_
+
+<p><em>foo bar</em></p>
+
+This is not emphasis, because the opening _ is followed by
+whitespace:
+
+_ foo bar_
+
+<p>_ foo bar_</p>
+
+This is not emphasis, because the opening _ is preceded
+by an alphanumeric and followed by punctuation:
+
+a_"foo"_
+
+<p>a_"foo"_</p>
+
+Emphasis with _ is not allowed inside words:
+
+foo_bar_
+
+<p>foo_bar_</p>
+
+5_6_78
+
+<p>5_6_78</p>
+
+пристаням_стремятся_
+
+<p>пристаням_стремятся_</p>
+
+Here _ does not generate emphasis, because the first delimiter run
+is right-flanking and the second left-flanking:
+
+aa_"bb"_cc
+
+<p>aa_"bb"_cc</p>
+
+This is emphasis, even though the opening delimiter is
+both left- and right-flanking, because it is preceded by
+punctuation:
+
+foo-_(bar)_
+
+<p>foo-<em>(bar)</em></p>
+
+Rule 3:
+This is not emphasis, because the closing delimiter does
+not match the opening delimiter:
+
+_foo*
+
+<p>_foo*</p>
+
+This is not emphasis, because the closing * is preceded by
+whitespace:
+
+*foo bar *
+
+<p>*foo bar *</p>
+
+A newline also counts as whitespace:
+
+*foo bar
+*
+
+<p>*foo bar
+*</p>
+
+This is not emphasis, because the second * is
+preceded by punctuation and followed by an alphanumeric
+(hence it is not part of a right-flanking delimiter run:
+
+*(*foo)
+
+<p>*(*foo)</p>
+
+The point of this restriction is more easily appreciated
+with this example:
+
+*(*foo*)*
+
+<p><em>(<em>foo</em>)</em></p>
+
+Intraword emphasis with * is allowed:
+
+*foo*bar
+
+<p><em>foo</em>bar</p>
+
+Rule 4:
+This is not emphasis, because the closing _ is preceded by
+whitespace:
+
+_foo bar _
+
+<p>_foo bar _</p>
+
+This is not emphasis, because the second _ is
+preceded by punctuation and followed by an alphanumeric:
+
+_(_foo)
+
+<p>_(_foo)</p>
+
+This is emphasis within emphasis:
+
+_(_foo_)_
+
+<p><em>(<em>foo</em>)</em></p>
+
+Intraword emphasis is disallowed for _:
+
+_foo_bar
+
+<p>_foo_bar</p>
+
+_пристаням_стремятся
+
+<p>_пристаням_стремятся</p>
+
+_foo_bar_baz_
+
+<p><em>foo_bar_baz</em></p>
+
+This is emphasis, even though the closing delimiter is
+both left- and right-flanking, because it is followed by
+punctuation:
+
+_(bar)_.
+
+<p><em>(bar)</em>.</p>
+
+Rule 5:
+
+**foo bar**
+
+<p><strong>foo bar</strong></p>
+
+This is not strong emphasis, because the opening delimiter is
+followed by whitespace:
+
+** foo bar**
+
+<p>** foo bar**</p>
+
+This is not strong emphasis, because the opening ** is preceded
+by an alphanumeric and followed by punctuation, and hence
+not part of a left-flanking delimiter run:
+
+a**"foo"**
+
+<p>a**"foo"**</p>
+
+Intraword strong emphasis with ** is permitted:
+
+foo**bar**
+
+<p>foo<strong>bar</strong></p>
+
+Rule 6:
+
+__foo bar__
+
+<p><strong>foo bar</strong></p>
+
+This is not strong emphasis, because the opening delimiter is
+followed by whitespace:
+
+__ foo bar__
+
+<p>__ foo bar__</p>
+
+A newline counts as whitespace:
+
+__
+foo bar__
+
+<p>__
+foo bar__</p>
+
+This is not strong emphasis, because the opening __ is preceded
+by an alphanumeric and followed by punctuation:
+
+a__"foo"__
+
+<p>a__"foo"__</p>
+
+Intraword strong emphasis is forbidden with __:
+
+foo__bar__
+
+<p>foo__bar__</p>
+
+5__6__78
+
+<p>5__6__78</p>
+
+пристаням__стремятся__
+
+<p>пристаням__стремятся__</p>
+
+__foo, __bar__, baz__
+
+<p><strong>foo, <strong>bar</strong>, baz</strong></p>
+
+This is strong emphasis, even though the opening delimiter is
+both left- and right-flanking, because it is preceded by
+punctuation:
+
+foo-__(bar)__
+
+<p>foo-<strong>(bar)</strong></p>
+
+Rule 7:
+This is not strong emphasis, because the closing delimiter is preceded
+by whitespace:
+
+**foo bar **
+
+<p>**foo bar **</p>
+
+(Nor can it be interpreted as an emphasized *foo bar *, because of
+Rule 11.)
+This is not strong emphasis, because the second ** is
+preceded by punctuation and followed by an alphanumeric:
+
+**(**foo)
+
+<p>**(**foo)</p>
+
+The point of this restriction is more easily appreciated
+with these examples:
+
+*(**foo**)*
+
+<p><em>(<strong>foo</strong>)</em></p>
+
+**Gomphocarpus (*Gomphocarpus physocarpus*, syn.
+*Asclepias physocarpa*)**
+
+<p><strong>Gomphocarpus (<em>Gomphocarpus physocarpus</em>, syn.
+<em>Asclepias physocarpa</em>)</strong></p>
+
+**foo "*bar*" foo**
+
+<p><strong>foo "<em>bar</em>" foo</strong></p>
+
+Intraword emphasis:
+
+**foo**bar
+
+<p><strong>foo</strong>bar</p>
+
+Rule 8:
+This is not strong emphasis, because the closing delimiter is
+preceded by whitespace:
+
+__foo bar __
+
+<p>__foo bar __</p>
+
+This is not strong emphasis, because the second __ is
+preceded by punctuation and followed by an alphanumeric:
+
+__(__foo)
+
+<p>__(__foo)</p>
+
+The point of this restriction is more easily appreciated
+with this example:
+
+_(__foo__)_
+
+<p><em>(<strong>foo</strong>)</em></p>
+
+Intraword strong emphasis is forbidden with __:
+
+__foo__bar
+
+<p>__foo__bar</p>
+
+__пристаням__стремятся
+
+<p>__пристаням__стремятся</p>
+
+__foo__bar__baz__
+
+<p><strong>foo__bar__baz</strong></p>
+
+This is strong emphasis, even though the closing delimiter is
+both left- and right-flanking, because it is followed by
+punctuation:
+
+__(bar)__.
+
+<p><strong>(bar)</strong>.</p>
+
+Rule 9:
+Any nonempty sequence of inline elements can be the contents of an
+emphasized span.
+
+*foo [bar](/url)*
+
+<p><em>foo <a href="/url">bar</a></em></p>
+
+*foo
+bar*
+
+<p><em>foo
+bar</em></p>
+
+In particular, emphasis and strong emphasis can be nested
+inside emphasis:
+
+_foo __bar__ baz_
+
+<p><em>foo <strong>bar</strong> baz</em></p>
+
+_foo _bar_ baz_
+
+<p><em>foo <em>bar</em> baz</em></p>
+
+__foo_ bar_
+
+<p><em><em>foo</em> bar</em></p>
+
+*foo *bar**
+
+<p><em>foo <em>bar</em></em></p>
+
+*foo **bar** baz*
+
+<p><em>foo <strong>bar</strong> baz</em></p>
+
+*foo**bar**baz*
+
+<p><em>foo<strong>bar</strong>baz</em></p>
+
+Note that in the preceding case, the interpretation
+<p><em>foo</em><em>bar<em></em>baz</em></p>
+
+is precluded by the condition that a delimiter that
+can both open and close (like the * after foo)
+cannot form emphasis if the sum of the lengths of
+the delimiter runs containing the opening and
+closing delimiters is a multiple of 3 unless
+both lengths are multiples of 3.
+For the same reason, we don’t get two consecutive
+emphasis sections in this example:
+
+*foo**bar*
+
+<p><em>foo**bar</em></p>
+
+The same condition ensures that the following
+cases are all strong emphasis nested inside
+emphasis, even when the interior spaces are
+omitted:
+
+***foo** bar*
+
+<p><em><strong>foo</strong> bar</em></p>
+
+*foo **bar***
+
+<p><em>foo <strong>bar</strong></em></p>
+
+*foo**bar***
+
+<p><em>foo<strong>bar</strong></em></p>
+
+When the lengths of the interior closing and opening
+delimiter runs are both multiples of 3, though,
+they can match to create emphasis:
+
+foo***bar***baz
+
+<p>foo<em><strong>bar</strong></em>baz</p>
+
+foo******bar*********baz
+
+<p>foo<strong><strong><strong>bar</strong></strong></strong>***baz</p>
+
+Indefinite levels of nesting are possible:
+
+*foo **bar *baz* bim** bop*
+
+<p><em>foo <strong>bar <em>baz</em> bim</strong> bop</em></p>
+
+*foo [*bar*](/url)*
+
+<p><em>foo <a href="/url"><em>bar</em></a></em></p>
+
+There can be no empty emphasis or strong emphasis:
+
+** is not an empty emphasis
+
+<p>** is not an empty emphasis</p>
+
+**** is not an empty strong emphasis
+
+<p>**** is not an empty strong emphasis</p>
+
+Rule 10:
+Any nonempty sequence of inline elements can be the contents of an
+strongly emphasized span.
+
+**foo [bar](/url)**
+
+<p><strong>foo <a href="/url">bar</a></strong></p>
+
+**foo
+bar**
+
+<p><strong>foo
+bar</strong></p>
+
+In particular, emphasis and strong emphasis can be nested
+inside strong emphasis:
+
+__foo _bar_ baz__
+
+<p><strong>foo <em>bar</em> baz</strong></p>
+
+__foo __bar__ baz__
+
+<p><strong>foo <strong>bar</strong> baz</strong></p>
+
+____foo__ bar__
+
+<p><strong><strong>foo</strong> bar</strong></p>
+
+**foo **bar****
+
+<p><strong>foo <strong>bar</strong></strong></p>
+
+**foo *bar* baz**
+
+<p><strong>foo <em>bar</em> baz</strong></p>
+
+**foo*bar*baz**
+
+<p><strong>foo<em>bar</em>baz</strong></p>
+
+***foo* bar**
+
+<p><strong><em>foo</em> bar</strong></p>
+
+**foo *bar***
+
+<p><strong>foo <em>bar</em></strong></p>
+
+Indefinite levels of nesting are possible:
+
+**foo *bar **baz**
+bim* bop**
+
+<p><strong>foo <em>bar <strong>baz</strong>
+bim</em> bop</strong></p>
+
+**foo [*bar*](/url)**
+
+<p><strong>foo <a href="/url"><em>bar</em></a></strong></p>
+
+There can be no empty emphasis or strong emphasis:
+
+__ is not an empty emphasis
+
+<p>__ is not an empty emphasis</p>
+
+____ is not an empty strong emphasis
+
+<p>____ is not an empty strong emphasis</p>
+
+Rule 11:
+
+foo ***
+
+<p>foo ***</p>
+
+foo *\**
+
+<p>foo <em>*</em></p>
+
+foo *_*
+
+<p>foo <em>_</em></p>
+
+foo *****
+
+<p>foo *****</p>
+
+foo **\***
+
+<p>foo <strong>*</strong></p>
+
+foo **_**
+
+<p>foo <strong>_</strong></p>
+
+Note that when delimiters do not match evenly, Rule 11 determines
+that the excess literal * characters will appear outside of the
+emphasis, rather than inside it:
+
+**foo*
+
+<p>*<em>foo</em></p>
+
+*foo**
+
+<p><em>foo</em>*</p>
+
+***foo**
+
+<p>*<strong>foo</strong></p>
+
+****foo*
+
+<p>***<em>foo</em></p>
+
+**foo***
+
+<p><strong>foo</strong>*</p>
+
+*foo****
+
+<p><em>foo</em>***</p>
+
+Rule 12:
+
+foo ___
+
+<p>foo ___</p>
+
+foo _\__
+
+<p>foo <em>_</em></p>
+
+foo _*_
+
+<p>foo <em>*</em></p>
+
+foo _____
+
+<p>foo _____</p>
+
+foo __\___
+
+<p>foo <strong>_</strong></p>
+
+foo __*__
+
+<p>foo <strong>*</strong></p>
+
+__foo_
+
+<p>_<em>foo</em></p>
+
+Note that when delimiters do not match evenly, Rule 12 determines
+that the excess literal _ characters will appear outside of the
+emphasis, rather than inside it:
+
+_foo__
+
+<p><em>foo</em>_</p>
+
+___foo__
+
+<p>_<strong>foo</strong></p>
+
+____foo_
+
+<p>___<em>foo</em></p>
+
+__foo___
+
+<p><strong>foo</strong>_</p>
+
+_foo____
+
+<p><em>foo</em>___</p>
+
+Rule 13 implies that if you want emphasis nested directly inside
+emphasis, you must use different delimiters:
+
+**foo**
+
+<p><strong>foo</strong></p>
+
+*_foo_*
+
+<p><em><em>foo</em></em></p>
+
+__foo__
+
+<p><strong>foo</strong></p>
+
+_*foo*_
+
+<p><em><em>foo</em></em></p>
+
+However, strong emphasis within strong emphasis is possible without
+switching delimiters:
+
+****foo****
+
+<p><strong><strong>foo</strong></strong></p>
+
+____foo____
+
+<p><strong><strong>foo</strong></strong></p>
+
+Rule 13 can be applied to arbitrarily long sequences of
+delimiters:
+
+******foo******
+
+<p><strong><strong><strong>foo</strong></strong></strong></p>
+
+Rule 14:
+
+***foo***
+
+<p><em><strong>foo</strong></em></p>
+
+_____foo_____
+
+<p><em><strong><strong>foo</strong></strong></em></p>
+
+Rule 15:
+
+*foo _bar* baz_
+
+<p><em>foo _bar</em> baz_</p>
+
+*foo __bar *baz bim__ bam*
+
+<p><em>foo <strong>bar *baz bim</strong> bam</em></p>
+
+Rule 16:
+
+**foo **bar baz**
+
+<p>**foo <strong>bar baz</strong></p>
+
+*foo *bar baz*
+
+<p>*foo <em>bar baz</em></p>
+
+Rule 17:
+
+*[bar*](/url)
+
+<p>*<a href="/url">bar*</a></p>
+
+_foo [bar_](/url)
+
+<p>_foo <a href="/url">bar_</a></p>
+
+*<img src="foo" title="*"/>
+
+<p>*<img src="foo" title="*"/></p>
+
+**<a href="**">
+
+<p>**<a href="**"></p>
+
+__<a href="__">
+
+<p>__<a href="__"></p>
+
+*a `*`*
+
+<p><em>a <code>*</code></em></p>
+
+_a `_`_
+
+<p><em>a <code>_</code></em></p>
+
+**a<http://foo.bar/?q=**>
+
+<p>**a<a href="http://foo.bar/?q=**">http://foo.bar/?q=**</a></p>
+
+__a<http://foo.bar/?q=__>
+
+<p>__a<a href="http://foo.bar/?q=__">http://foo.bar/?q=__</a></p>
+
+---
+
+### Example Example 360
+
+**Markdown input:**
+
+```markdown
+*foo bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo bar</em></p>
+```
+
+### Example Example 361
+
+**Markdown input:**
+
+```markdown
+a * foo bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p>a * foo bar*</p>
+```
+
+### Example Example 362
+
+**Markdown input:**
+
+```markdown
+a*"foo"*
+```
+
+**Expected HTML output:**
+
+```html
+<p>a*&quot;foo&quot;*</p>
+```
+
+### Example Example 363
+
+**Markdown input:**
+
+```markdown
+* a *
+```
+
+**Expected HTML output:**
+
+```html
+<p>* a *</p>
+```
+
+### Example Example 364
+
+**Markdown input:**
+
+```markdown
+foo*bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<em>bar</em></p>
+```
+
+### Example Example 365
+
+**Markdown input:**
+
+```markdown
+5*6*78
+```
+
+**Expected HTML output:**
+
+```html
+<p>5<em>6</em>78</p>
+```
+
+### Example Example 366
+
+**Markdown input:**
+
+```markdown
+_foo bar_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo bar</em></p>
+```
+
+### Example Example 367
+
+**Markdown input:**
+
+```markdown
+_ foo bar_
+```
+
+**Expected HTML output:**
+
+```html
+<p>_ foo bar_</p>
+```
+
+### Example Example 368
+
+**Markdown input:**
+
+```markdown
+a_"foo"_
+```
+
+**Expected HTML output:**
+
+```html
+<p>a_&quot;foo&quot;_</p>
+```
+
+### Example Example 369
+
+**Markdown input:**
+
+```markdown
+foo_bar_
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo_bar_</p>
+```
+
+### Example Example 370
+
+**Markdown input:**
+
+```markdown
+5_6_78
+```
+
+**Expected HTML output:**
+
+```html
+<p>5_6_78</p>
+```
+
+### Example Example 371
+
+**Markdown input:**
+
+```markdown
+пристаням_стремятся_
+```
+
+**Expected HTML output:**
+
+```html
+<p>пристаням_стремятся_</p>
+```
+
+### Example Example 372
+
+**Markdown input:**
+
+```markdown
+aa_"bb"_cc
+```
+
+**Expected HTML output:**
+
+```html
+<p>aa_&quot;bb&quot;_cc</p>
+```
+
+### Example Example 373
+
+**Markdown input:**
+
+```markdown
+foo-_(bar)_
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo-<em>(bar)</em></p>
+```
+
+### Example Example 374
+
+**Markdown input:**
+
+```markdown
+_foo*
+```
+
+**Expected HTML output:**
+
+```html
+<p>_foo*</p>
+```
+
+### Example Example 375
+
+**Markdown input:**
+
+```markdown
+*foo bar *
+```
+
+**Expected HTML output:**
+
+```html
+<p>*foo bar *</p>
+```
+
+### Example Example 376
+
+**Markdown input:**
+
+```markdown
+*foo bar
+*
+```
+
+**Expected HTML output:**
+
+```html
+<p>*foo bar
+*</p>
+```
+
+### Example Example 377
+
+**Markdown input:**
+
+```markdown
+*(*foo)
+```
+
+**Expected HTML output:**
+
+```html
+<p>*(*foo)</p>
+```
+
+### Example Example 378
+
+**Markdown input:**
+
+```markdown
+*(*foo*)*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>(<em>foo</em>)</em></p>
+```
+
+### Example Example 379
+
+**Markdown input:**
+
+```markdown
+*foo*bar
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo</em>bar</p>
+```
+
+### Example Example 380
+
+**Markdown input:**
+
+```markdown
+_foo bar _
+```
+
+**Expected HTML output:**
+
+```html
+<p>_foo bar _</p>
+```
+
+### Example Example 381
+
+**Markdown input:**
+
+```markdown
+_(_foo)
+```
+
+**Expected HTML output:**
+
+```html
+<p>_(_foo)</p>
+```
+
+### Example Example 382
+
+**Markdown input:**
+
+```markdown
+_(_foo_)_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>(<em>foo</em>)</em></p>
+```
+
+### Example Example 383
+
+**Markdown input:**
+
+```markdown
+_foo_bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>_foo_bar</p>
+```
+
+### Example Example 384
+
+**Markdown input:**
+
+```markdown
+_пристаням_стремятся
+```
+
+**Expected HTML output:**
+
+```html
+<p>_пристаням_стремятся</p>
+```
+
+### Example Example 385
+
+**Markdown input:**
+
+```markdown
+_foo_bar_baz_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo_bar_baz</em></p>
+```
+
+### Example Example 386
+
+**Markdown input:**
+
+```markdown
+_(bar)_.
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>(bar)</em>.</p>
+```
+
+### Example Example 387
+
+**Markdown input:**
+
+```markdown
+**foo bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo bar</strong></p>
+```
+
+### Example Example 388
+
+**Markdown input:**
+
+```markdown
+** foo bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p>** foo bar**</p>
+```
+
+### Example Example 389
+
+**Markdown input:**
+
+```markdown
+a**"foo"**
+```
+
+**Expected HTML output:**
+
+```html
+<p>a**&quot;foo&quot;**</p>
+```
+
+### Example Example 390
+
+**Markdown input:**
+
+```markdown
+foo**bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<strong>bar</strong></p>
+```
+
+### Example Example 391
+
+**Markdown input:**
+
+```markdown
+__foo bar__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo bar</strong></p>
+```
+
+### Example Example 392
+
+**Markdown input:**
+
+```markdown
+__ foo bar__
+```
+
+**Expected HTML output:**
+
+```html
+<p>__ foo bar__</p>
+```
+
+### Example Example 393
+
+**Markdown input:**
+
+```markdown
+__
+foo bar__
+```
+
+**Expected HTML output:**
+
+```html
+<p>__
+foo bar__</p>
+```
+
+### Example Example 394
+
+**Markdown input:**
+
+```markdown
+a__"foo"__
+```
+
+**Expected HTML output:**
+
+```html
+<p>a__&quot;foo&quot;__</p>
+```
+
+### Example Example 395
+
+**Markdown input:**
+
+```markdown
+foo__bar__
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo__bar__</p>
+```
+
+### Example Example 396
+
+**Markdown input:**
+
+```markdown
+5__6__78
+```
+
+**Expected HTML output:**
+
+```html
+<p>5__6__78</p>
+```
+
+### Example Example 397
+
+**Markdown input:**
+
+```markdown
+пристаням__стремятся__
+```
+
+**Expected HTML output:**
+
+```html
+<p>пристаням__стремятся__</p>
+```
+
+### Example Example 398
+
+**Markdown input:**
+
+```markdown
+__foo, __bar__, baz__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo, <strong>bar</strong>, baz</strong></p>
+```
+
+### Example Example 399
+
+**Markdown input:**
+
+```markdown
+foo-__(bar)__
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo-<strong>(bar)</strong></p>
+```
+
+### Example Example 400
+
+**Markdown input:**
+
+```markdown
+**foo bar **
+```
+
+**Expected HTML output:**
+
+```html
+<p>**foo bar **</p>
+```
+
+### Example Example 401
+
+**Markdown input:**
+
+```markdown
+**(**foo)
+```
+
+**Expected HTML output:**
+
+```html
+<p>**(**foo)</p>
+```
+
+### Example Example 402
+
+**Markdown input:**
+
+```markdown
+*(**foo**)*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>(<strong>foo</strong>)</em></p>
+```
+
+### Example Example 403
+
+**Markdown input:**
+
+```markdown
+**Gomphocarpus (*Gomphocarpus physocarpus*, syn.
+*Asclepias physocarpa*)**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>Gomphocarpus (<em>Gomphocarpus physocarpus</em>, syn.
+<em>Asclepias physocarpa</em>)</strong></p>
+```
+
+### Example Example 404
+
+**Markdown input:**
+
+```markdown
+**foo "*bar*" foo**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo &quot;<em>bar</em>&quot; foo</strong></p>
+```
+
+### Example Example 405
+
+**Markdown input:**
+
+```markdown
+**foo**bar
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo</strong>bar</p>
+```
+
+### Example Example 406
+
+**Markdown input:**
+
+```markdown
+__foo bar __
+```
+
+**Expected HTML output:**
+
+```html
+<p>__foo bar __</p>
+```
+
+### Example Example 407
+
+**Markdown input:**
+
+```markdown
+__(__foo)
+```
+
+**Expected HTML output:**
+
+```html
+<p>__(__foo)</p>
+```
+
+### Example Example 408
+
+**Markdown input:**
+
+```markdown
+_(__foo__)_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>(<strong>foo</strong>)</em></p>
+```
+
+### Example Example 409
+
+**Markdown input:**
+
+```markdown
+__foo__bar
+```
+
+**Expected HTML output:**
+
+```html
+<p>__foo__bar</p>
+```
+
+### Example Example 410
+
+**Markdown input:**
+
+```markdown
+__пристаням__стремятся
+```
+
+**Expected HTML output:**
+
+```html
+<p>__пристаням__стремятся</p>
+```
+
+### Example Example 411
+
+**Markdown input:**
+
+```markdown
+__foo__bar__baz__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo__bar__baz</strong></p>
+```
+
+### Example Example 412
+
+**Markdown input:**
+
+```markdown
+__(bar)__.
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>(bar)</strong>.</p>
+```
+
+### Example Example 413
+
+**Markdown input:**
+
+```markdown
+*foo [bar](/url)*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <a href="/url">bar</a></em></p>
+```
+
+### Example Example 414
+
+**Markdown input:**
+
+```markdown
+*foo
+bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo
+bar</em></p>
+```
+
+### Example Example 415
+
+**Markdown input:**
+
+```markdown
+_foo __bar__ baz_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <strong>bar</strong> baz</em></p>
+```
+
+### Example Example 416
+
+**Markdown input:**
+
+```markdown
+_foo _bar_ baz_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <em>bar</em> baz</em></p>
+```
+
+### Example Example 417
+
+**Markdown input:**
+
+```markdown
+__foo_ bar_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><em>foo</em> bar</em></p>
+```
+
+### Example Example 418
+
+**Markdown input:**
+
+```markdown
+*foo *bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <em>bar</em></em></p>
+```
+
+### Example Example 419
+
+**Markdown input:**
+
+```markdown
+*foo **bar** baz*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <strong>bar</strong> baz</em></p>
+```
+
+### Example Example 420
+
+**Markdown input:**
+
+```markdown
+*foo**bar**baz*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo<strong>bar</strong>baz</em></p>
+```
+
+### Example Example 421
+
+**Markdown input:**
+
+```markdown
+*foo**bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo**bar</em></p>
+```
+
+### Example Example 422
+
+**Markdown input:**
+
+```markdown
+***foo** bar*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><strong>foo</strong> bar</em></p>
+```
+
+### Example Example 423
+
+**Markdown input:**
+
+```markdown
+*foo **bar***
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <strong>bar</strong></em></p>
+```
+
+### Example Example 424
+
+**Markdown input:**
+
+```markdown
+*foo**bar***
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo<strong>bar</strong></em></p>
+```
+
+### Example Example 425
+
+**Markdown input:**
+
+```markdown
+foo***bar***baz
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<em><strong>bar</strong></em>baz</p>
+```
+
+### Example Example 426
+
+**Markdown input:**
+
+```markdown
+foo******bar*********baz
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo<strong><strong><strong>bar</strong></strong></strong>***baz</p>
+```
+
+### Example Example 427
+
+**Markdown input:**
+
+```markdown
+*foo **bar *baz* bim** bop*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <strong>bar <em>baz</em> bim</strong> bop</em></p>
+```
+
+### Example Example 428
+
+**Markdown input:**
+
+```markdown
+*foo [*bar*](/url)*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <a href="/url"><em>bar</em></a></em></p>
+```
+
+### Example Example 429
+
+**Markdown input:**
+
+```markdown
+** is not an empty emphasis
+```
+
+**Expected HTML output:**
+
+```html
+<p>** is not an empty emphasis</p>
+```
+
+### Example Example 430
+
+**Markdown input:**
+
+```markdown
+**** is not an empty strong emphasis
+```
+
+**Expected HTML output:**
+
+```html
+<p>**** is not an empty strong emphasis</p>
+```
+
+### Example Example 431
+
+**Markdown input:**
+
+```markdown
+**foo [bar](/url)**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <a href="/url">bar</a></strong></p>
+```
+
+### Example Example 432
+
+**Markdown input:**
+
+```markdown
+**foo
+bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo
+bar</strong></p>
+```
+
+### Example Example 433
+
+**Markdown input:**
+
+```markdown
+__foo _bar_ baz__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <em>bar</em> baz</strong></p>
+```
+
+### Example Example 434
+
+**Markdown input:**
+
+```markdown
+__foo __bar__ baz__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <strong>bar</strong> baz</strong></p>
+```
+
+### Example Example 435
+
+**Markdown input:**
+
+```markdown
+____foo__ bar__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong><strong>foo</strong> bar</strong></p>
+```
+
+### Example Example 436
+
+**Markdown input:**
+
+```markdown
+**foo **bar****
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <strong>bar</strong></strong></p>
+```
+
+### Example Example 437
+
+**Markdown input:**
+
+```markdown
+**foo *bar* baz**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <em>bar</em> baz</strong></p>
+```
+
+### Example Example 438
+
+**Markdown input:**
+
+```markdown
+**foo*bar*baz**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo<em>bar</em>baz</strong></p>
+```
+
+### Example Example 439
+
+**Markdown input:**
+
+```markdown
+***foo* bar**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong><em>foo</em> bar</strong></p>
+```
+
+### Example Example 440
+
+**Markdown input:**
+
+```markdown
+**foo *bar***
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <em>bar</em></strong></p>
+```
+
+### Example Example 441
+
+**Markdown input:**
+
+```markdown
+**foo *bar **baz**
+bim* bop**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <em>bar <strong>baz</strong>
+bim</em> bop</strong></p>
+```
+
+### Example Example 442
+
+**Markdown input:**
+
+```markdown
+**foo [*bar*](/url)**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo <a href="/url"><em>bar</em></a></strong></p>
+```
+
+### Example Example 443
+
+**Markdown input:**
+
+```markdown
+__ is not an empty emphasis
+```
+
+**Expected HTML output:**
+
+```html
+<p>__ is not an empty emphasis</p>
+```
+
+### Example Example 444
+
+**Markdown input:**
+
+```markdown
+____ is not an empty strong emphasis
+```
+
+**Expected HTML output:**
+
+```html
+<p>____ is not an empty strong emphasis</p>
+```
+
+### Example Example 445
+
+**Markdown input:**
+
+```markdown
+foo ***
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo ***</p>
+```
+
+### Example Example 446
+
+**Markdown input:**
+
+```markdown
+foo *\**
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <em>*</em></p>
+```
+
+### Example Example 447
+
+**Markdown input:**
+
+```markdown
+foo *_*
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <em>_</em></p>
+```
+
+### Example Example 448
+
+**Markdown input:**
+
+```markdown
+foo *****
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo *****</p>
+```
+
+### Example Example 449
+
+**Markdown input:**
+
+```markdown
+foo **\***
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <strong>*</strong></p>
+```
+
+### Example Example 450
+
+**Markdown input:**
+
+```markdown
+foo **_**
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <strong>_</strong></p>
+```
+
+### Example Example 451
+
+**Markdown input:**
+
+```markdown
+**foo*
+```
+
+**Expected HTML output:**
+
+```html
+<p>*<em>foo</em></p>
+```
+
+### Example Example 452
+
+**Markdown input:**
+
+```markdown
+*foo**
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo</em>*</p>
+```
+
+### Example Example 453
+
+**Markdown input:**
+
+```markdown
+***foo**
+```
+
+**Expected HTML output:**
+
+```html
+<p>*<strong>foo</strong></p>
+```
+
+### Example Example 454
+
+**Markdown input:**
+
+```markdown
+****foo*
+```
+
+**Expected HTML output:**
+
+```html
+<p>***<em>foo</em></p>
+```
+
+### Example Example 455
+
+**Markdown input:**
+
+```markdown
+**foo***
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo</strong>*</p>
+```
+
+### Example Example 456
+
+**Markdown input:**
+
+```markdown
+*foo****
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo</em>***</p>
+```
+
+### Example Example 457
+
+**Markdown input:**
+
+```markdown
+foo ___
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo ___</p>
+```
+
+### Example Example 458
+
+**Markdown input:**
+
+```markdown
+foo _\__
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <em>_</em></p>
+```
+
+### Example Example 459
+
+**Markdown input:**
+
+```markdown
+foo _*_
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <em>*</em></p>
+```
+
+### Example Example 460
+
+**Markdown input:**
+
+```markdown
+foo _____
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo _____</p>
+```
+
+### Example Example 461
+
+**Markdown input:**
+
+```markdown
+foo __\___
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <strong>_</strong></p>
+```
+
+### Example Example 462
+
+**Markdown input:**
+
+```markdown
+foo __*__
+```
+
+**Expected HTML output:**
+
+```html
+<p>foo <strong>*</strong></p>
+```
+
+### Example Example 463
+
+**Markdown input:**
+
+```markdown
+__foo_
+```
+
+**Expected HTML output:**
+
+```html
+<p>_<em>foo</em></p>
+```
+
+### Example Example 464
+
+**Markdown input:**
+
+```markdown
+_foo__
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo</em>_</p>
+```
+
+### Example Example 465
+
+**Markdown input:**
+
+```markdown
+___foo__
+```
+
+**Expected HTML output:**
+
+```html
+<p>_<strong>foo</strong></p>
+```
+
+### Example Example 466
+
+**Markdown input:**
+
+```markdown
+____foo_
+```
+
+**Expected HTML output:**
+
+```html
+<p>___<em>foo</em></p>
+```
+
+### Example Example 467
+
+**Markdown input:**
+
+```markdown
+__foo___
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo</strong>_</p>
+```
+
+### Example Example 468
+
+**Markdown input:**
+
+```markdown
+_foo____
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo</em>___</p>
+```
+
+### Example Example 469
+
+**Markdown input:**
+
+```markdown
+**foo**
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo</strong></p>
+```
+
+### Example Example 470
+
+**Markdown input:**
+
+```markdown
+*_foo_*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><em>foo</em></em></p>
+```
+
+### Example Example 471
+
+**Markdown input:**
+
+```markdown
+__foo__
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong>foo</strong></p>
+```
+
+### Example Example 472
+
+**Markdown input:**
+
+```markdown
+_*foo*_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><em>foo</em></em></p>
+```
+
+### Example Example 473
+
+**Markdown input:**
+
+```markdown
+****foo****
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong><strong>foo</strong></strong></p>
+```
+
+### Example Example 474
+
+**Markdown input:**
+
+```markdown
+____foo____
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong><strong>foo</strong></strong></p>
+```
+
+### Example Example 475
+
+**Markdown input:**
+
+```markdown
+******foo******
+```
+
+**Expected HTML output:**
+
+```html
+<p><strong><strong><strong>foo</strong></strong></strong></p>
+```
+
+### Example Example 476
+
+**Markdown input:**
+
+```markdown
+***foo***
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><strong>foo</strong></em></p>
+```
+
+### Example Example 477
+
+**Markdown input:**
+
+```markdown
+_____foo_____
+```
+
+**Expected HTML output:**
+
+```html
+<p><em><strong><strong>foo</strong></strong></em></p>
+```
+
+### Example Example 478
+
+**Markdown input:**
+
+```markdown
+*foo _bar* baz_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo _bar</em> baz_</p>
+```
+
+### Example Example 479
+
+**Markdown input:**
+
+```markdown
+*foo __bar *baz bim__ bam*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>foo <strong>bar *baz bim</strong> bam</em></p>
+```
+
+### Example Example 480
+
+**Markdown input:**
+
+```markdown
+**foo **bar baz**
+```
+
+**Expected HTML output:**
+
+```html
+<p>**foo <strong>bar baz</strong></p>
+```
+
+### Example Example 481
+
+**Markdown input:**
+
+```markdown
+*foo *bar baz*
+```
+
+**Expected HTML output:**
+
+```html
+<p>*foo <em>bar baz</em></p>
+```
+
+### Example Example 482
+
+**Markdown input:**
+
+```markdown
+*[bar*](/url)
+```
+
+**Expected HTML output:**
+
+```html
+<p>*<a href="/url">bar*</a></p>
+```
+
+### Example Example 483
+
+**Markdown input:**
+
+```markdown
+_foo [bar_](/url)
+```
+
+**Expected HTML output:**
+
+```html
+<p>_foo <a href="/url">bar_</a></p>
+```
+
+### Example Example 484
+
+**Markdown input:**
+
+```markdown
+*<img src="foo" title="*"/>
+```
+
+**Expected HTML output:**
+
+```html
+<p>*<img src="foo" title="*"/></p>
+```
+
+### Example Example 485
+
+**Markdown input:**
+
+```markdown
+**<a href="**">
+```
+
+**Expected HTML output:**
+
+```html
+<p>**<a href="**"></p>
+```
+
+### Example Example 486
+
+**Markdown input:**
+
+```markdown
+__<a href="__">
+```
+
+**Expected HTML output:**
+
+```html
+<p>__<a href="__"></p>
+```
+
+### Example Example 487
+
+**Markdown input:**
+
+```markdown
+*a `*`*
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>a <code>*</code></em></p>
+```
+
+### Example Example 488
+
+**Markdown input:**
+
+```markdown
+_a `_`_
+```
+
+**Expected HTML output:**
+
+```html
+<p><em>a <code>_</code></em></p>
+```
+
+### Example Example 489
+
+**Markdown input:**
+
+```markdown
+**a<http://foo.bar/?q=**>
+```
+
+**Expected HTML output:**
+
+```html
+<p>**a<a href="http://foo.bar/?q=**">http://foo.bar/?q=**</a></p>
+```
+
+### Example Example 490
+
+**Markdown input:**
+
+```markdown
+__a<http://foo.bar/?q=__>
+```
+
+**Expected HTML output:**
+
+```html
+<p>__a<a href="http://foo.bar/?q=__">http://foo.bar/?q=__</a></p>
+```

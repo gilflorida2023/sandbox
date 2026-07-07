@@ -1,0 +1,502 @@
+# Images
+
+Syntax for images is like the syntax for links, with one
+difference. Instead of link text, we have an
+image description.  The rules for this are the
+same as for link text, except that (a) an
+image description starts with ![ rather than [, and
+(b) an image description may contain links.
+An image description has inline elements
+as its contents.  When an image is rendered to HTML,
+this is standardly used as the image’s alt attribute.
+
+![foo](/url "title")
+
+<p><img src="/url" alt="foo" title="title" /></p>
+
+![foo *bar*]
+
+[foo *bar*]: train.jpg "train & tracks"
+
+<p><img src="train.jpg" alt="foo bar" title="train & tracks" /></p>
+
+![foo ![bar](/url)](/url2)
+
+<p><img src="/url2" alt="foo bar" /></p>
+
+![foo [bar](/url)](/url2)
+
+<p><img src="/url2" alt="foo bar" /></p>
+
+Though this spec is concerned with parsing, not rendering, it is
+recommended that in rendering to HTML, only the plain string content
+of the image description be used.  Note that in
+the above example, the alt attribute’s value is foo bar, not foo [bar](/url) or foo <a href="/url">bar</a>.  Only the plain string
+content is rendered, without formatting.
+
+![foo *bar*][]
+
+[foo *bar*]: train.jpg "train & tracks"
+
+<p><img src="train.jpg" alt="foo bar" title="train & tracks" /></p>
+
+![foo *bar*][foobar]
+
+[FOOBAR]: train.jpg "train & tracks"
+
+<p><img src="train.jpg" alt="foo bar" title="train & tracks" /></p>
+
+![foo](train.jpg)
+
+<p><img src="train.jpg" alt="foo" /></p>
+
+My ![foo bar](/path/to/train.jpg  "title"   )
+
+<p>My <img src="/path/to/train.jpg" alt="foo bar" title="title" /></p>
+
+![foo](<url>)
+
+<p><img src="url" alt="foo" /></p>
+
+![](/url)
+
+<p><img src="/url" alt="" /></p>
+
+Reference-style:
+
+![foo][bar]
+
+[bar]: /url
+
+<p><img src="/url" alt="foo" /></p>
+
+![foo][bar]
+
+[BAR]: /url
+
+<p><img src="/url" alt="foo" /></p>
+
+Collapsed:
+
+![foo][]
+
+[foo]: /url "title"
+
+<p><img src="/url" alt="foo" title="title" /></p>
+
+![*foo* bar][]
+
+[*foo* bar]: /url "title"
+
+<p><img src="/url" alt="foo bar" title="title" /></p>
+
+The labels are case-insensitive:
+
+![Foo][]
+
+[foo]: /url "title"
+
+<p><img src="/url" alt="Foo" title="title" /></p>
+
+As with reference links, whitespace is not allowed
+between the two sets of brackets:
+
+![foo]
+[]
+
+[foo]: /url "title"
+
+<p><img src="/url" alt="foo" title="title" />
+[]</p>
+
+Shortcut:
+
+![foo]
+
+[foo]: /url "title"
+
+<p><img src="/url" alt="foo" title="title" /></p>
+
+![*foo* bar]
+
+[*foo* bar]: /url "title"
+
+<p><img src="/url" alt="foo bar" title="title" /></p>
+
+Note that link labels cannot contain unescaped brackets:
+
+![[foo]]
+
+[[foo]]: /url "title"
+
+<p>![[foo]]</p>
+<p>[[foo]]: /url "title"</p>
+
+The link labels are case-insensitive:
+
+![Foo]
+
+[foo]: /url "title"
+
+<p><img src="/url" alt="Foo" title="title" /></p>
+
+If you just want a literal ! followed by bracketed text, you can
+backslash-escape the opening [:
+
+!\[foo]
+
+[foo]: /url "title"
+
+<p>![foo]</p>
+
+If you want a link after a literal !, backslash-escape the
+!:
+
+\![foo]
+
+[foo]: /url "title"
+
+<p>!<a href="/url" title="title">foo</a></p>
+
+---
+
+### Example Example 581
+
+**Markdown input:**
+
+```markdown
+![foo](/url "title")
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" title="title" /></p>
+```
+
+### Example Example 582
+
+**Markdown input:**
+
+```markdown
+![foo *bar*]
+
+[foo *bar*]: train.jpg "train & tracks"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="train.jpg" alt="foo bar" title="train &amp; tracks" /></p>
+```
+
+### Example Example 583
+
+**Markdown input:**
+
+```markdown
+![foo ![bar](/url)](/url2)
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url2" alt="foo bar" /></p>
+```
+
+### Example Example 584
+
+**Markdown input:**
+
+```markdown
+![foo [bar](/url)](/url2)
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url2" alt="foo bar" /></p>
+```
+
+### Example Example 585
+
+**Markdown input:**
+
+```markdown
+![foo *bar*][]
+
+[foo *bar*]: train.jpg "train & tracks"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="train.jpg" alt="foo bar" title="train &amp; tracks" /></p>
+```
+
+### Example Example 586
+
+**Markdown input:**
+
+```markdown
+![foo *bar*][foobar]
+
+[FOOBAR]: train.jpg "train & tracks"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="train.jpg" alt="foo bar" title="train &amp; tracks" /></p>
+```
+
+### Example Example 587
+
+**Markdown input:**
+
+```markdown
+![foo](train.jpg)
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="train.jpg" alt="foo" /></p>
+```
+
+### Example Example 588
+
+**Markdown input:**
+
+```markdown
+My ![foo bar](/path/to/train.jpg  "title"   )
+```
+
+**Expected HTML output:**
+
+```html
+<p>My <img src="/path/to/train.jpg" alt="foo bar" title="title" /></p>
+```
+
+### Example Example 589
+
+**Markdown input:**
+
+```markdown
+![foo](<url>)
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="url" alt="foo" /></p>
+```
+
+### Example Example 590
+
+**Markdown input:**
+
+```markdown
+![](/url)
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="" /></p>
+```
+
+### Example Example 591
+
+**Markdown input:**
+
+```markdown
+![foo][bar]
+
+[bar]: /url
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" /></p>
+```
+
+### Example Example 592
+
+**Markdown input:**
+
+```markdown
+![foo][bar]
+
+[BAR]: /url
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" /></p>
+```
+
+### Example Example 593
+
+**Markdown input:**
+
+```markdown
+![foo][]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" title="title" /></p>
+```
+
+### Example Example 594
+
+**Markdown input:**
+
+```markdown
+![*foo* bar][]
+
+[*foo* bar]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo bar" title="title" /></p>
+```
+
+### Example Example 595
+
+**Markdown input:**
+
+```markdown
+![Foo][]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="Foo" title="title" /></p>
+```
+
+### Example Example 596
+
+**Markdown input:**
+
+```markdown
+![foo] 
+[]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" title="title" />
+[]</p>
+```
+
+### Example Example 597
+
+**Markdown input:**
+
+```markdown
+![foo]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo" title="title" /></p>
+```
+
+### Example Example 598
+
+**Markdown input:**
+
+```markdown
+![*foo* bar]
+
+[*foo* bar]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="foo bar" title="title" /></p>
+```
+
+### Example Example 599
+
+**Markdown input:**
+
+```markdown
+![[foo]]
+
+[[foo]]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p>![[foo]]</p>
+<p>[[foo]]: /url &quot;title&quot;</p>
+```
+
+### Example Example 600
+
+**Markdown input:**
+
+```markdown
+![Foo]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p><img src="/url" alt="Foo" title="title" /></p>
+```
+
+### Example Example 601
+
+**Markdown input:**
+
+```markdown
+!\[foo]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p>![foo]</p>
+```
+
+### Example Example 602
+
+**Markdown input:**
+
+```markdown
+\![foo]
+
+[foo]: /url "title"
+```
+
+**Expected HTML output:**
+
+```html
+<p>!<a href="/url" title="title">foo</a></p>
+```

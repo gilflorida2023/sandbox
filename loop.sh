@@ -29,9 +29,12 @@ if [ "$CLEAN" = true ]; then
     ollama ps 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r model; do
         ollama stop "$model" 2>/dev/null || true
     done
-    find workspace/ -maxdepth 1 -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
+    find workspace/ -maxdepth 1 | tail -n +2 | xargs rm -rf 2>/dev/null || true
+    # Recreate workspace/specs working copy FROM the version-controlled specs/ source
+    mkdir -p workspace/specs
+    cp -r specs/. workspace/specs/ 2>/dev/null || true
     # Write fresh plan from specs
-    SPEC_FILES=$(ls workspace/specs/*.md 2>/dev/null | sed 's|.*/||' | sed 's|\.md$||')
+    SPEC_FILES=$(ls workspace/specs/*.md 2>/dev/null | grep -v '/gfm-language/' | sed 's|.*/||' | sed 's|\.md$||') || true
     {
         echo "# Implementation Plan"
         echo ""
@@ -68,6 +71,12 @@ if [ -f "workspace/IMPLEMENTATION_PLAN.md" ]; then
         echo "[Ralph] All tasks already completed. Nothing to do."
         exit 0
     fi
+fi
+
+# Pre-flight: the GOAL spec must exist in the recreated workspace/specs working copy
+if ! ls workspace/specs/GOAL-*.md >/dev/null 2>&1; then
+    echo "[Ralph] ERROR: no GOAL spec in workspace/specs/. Run 'loop.sh --clean' to recreate it from specs/." >&2
+    exit 1
 fi
 
 while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
