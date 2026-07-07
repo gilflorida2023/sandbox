@@ -54,11 +54,13 @@ def normalize(name):
     return name.replace("_", ".")
 
 def failure_key(tc, result):
-    """Generate a key for repeated-failure detection."""
+    """Generate a key for repeated-failure detection. Only count actual errors."""
     name = tc.get("function", {}).get("name", "?")
     try:
         r = json.loads(result)
         error = r.get("error", "")[:80]
+        if not error:
+            return None  # successful call, skip
     except (json.JSONDecodeError, TypeError, AttributeError):
         error = str(result)[:80]
     return f"{name}:{error}"
@@ -200,15 +202,28 @@ def main():
 
             # Repeated-failure detection: same tool+error 3× → abort
             fk = failure_key(tc, out)
-            failure_counts[fk] = failure_counts.get(fk, 0) + 1
-            if failure_counts[fk] >= 3:
-                vlog(f"Repeated failure ({failure_counts[fk]}×): {fk}")
-                messages.append({
-                    "role": "tool",
-                    "content": json.dumps({"error": f"Repeated failure: {tc.get('function', {}).get('name', '?')} failed {failure_counts[fk]} times with same error. Report this as a blocker — do NOT retry."}),
-                    "tool_call_id": f"blocker_{inner}"
-                })
-                break
+            if fk is not None:
+                failure_counts[fk] = failure_counts.get(fk, 0) + 1
+                if failure_counts[fk] >= 3:
+                    vlog(f"Repeated failure ({failure_counts[fk]}×): {fk}")
+                    # Write .blocker file so next loop iteration knows what happened
+                    try:
+                        blocker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspace", ".blocker")
+                        with open(blocker_path, "w") as bf:
+                            bf.write(json.dumps({
+                                "tool": tc.get("function", {}).get("name", "?"),
+                                "error": fk,
+                                "count": failure_counts[fk],
+                                "iteration": it,
+                            }))
+                    except Exception:
+                        pass
+                    messages.append({
+                        "role": "tool",
+                        "content": json.dumps({"error": f"Repeated failure: {tc.get('function', {}).get('name', '?')} failed {failure_counts[fk]} times with same error. Report this as a blocker — do NOT retry."}),
+                        "tool_call_id": f"blocker_{inner}"
+                    })
+                    break
         else:
             continue
         break

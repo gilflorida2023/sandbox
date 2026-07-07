@@ -75,7 +75,8 @@ def main():
             cmd + cmd_args,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            cwd=WORKSPACE_ROOT
         )
         
         if display_output:

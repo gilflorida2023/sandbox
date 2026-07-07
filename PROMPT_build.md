@@ -17,6 +17,7 @@ Output tool calls on their own line: `##mcp_tool <name> <json-args>`
 
 IMPORTANT: Do NOT prefix paths with "workspace/". Paths are relative to workspace root.
 To run build commands or system commands, write a .sh script with workspace.write first, then workspace.run that script. NEVER pass a directory as the path to workspace.run.
+NOTE: workspace.run runs scripts from workspace/ as the working directory. So `cd repos/simplesieve` works inside scripts.
 
 ## Critical Rules
 

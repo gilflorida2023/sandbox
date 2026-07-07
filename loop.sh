@@ -31,6 +31,7 @@ if [ "$CLEAN" = true ]; then
     ollama stop "$model" 2>/dev/null || true
     done
     find workspace/ -maxdepth 1 -not -name 'IMPLEMENTATION_PLAN.md' -not -name 'specs' | tail -n +2 | xargs rm -rf 2>/dev/null || true
+    rm -f workspace/.blocker
     cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
 # Implementation Plan
 
@@ -88,6 +89,14 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
         if [ -f "AGENTS.md" ] && [ -s "AGENTS.md" ]; then
             echo "## AGENTS.md"
             cat AGENTS.md
+            echo ""
+        fi
+        if [ -f "workspace/.blocker" ]; then
+            echo "## BLOCKER from previous run"
+            echo "The following error repeated 3+ times and was not resolved. Read this and change your approach:"
+            cat workspace/.blocker
+            echo ""
+            echo "To clear this blocker, update IMPLEMENTATION_PLAN.md to skip or work around the failing step."
             echo ""
         fi
     } | python3 ralph_agent.py || {
