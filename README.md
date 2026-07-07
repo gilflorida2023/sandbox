@@ -1,5 +1,7 @@
 # MCP + Ollama Coding Agent — Proof of Concept
 
+> **Acknowledgments:** The pure-bash inner-loop agent architecture (`ralph-agent.sh`, `loop.sh`, `subagent.sh`) is adapted from the [**Ralph Wiggum**](https://github.com/standhartinger/ralph-wiggum) open-source coding agent by **Sam T. Hartinger**, documented at [alviano.com/2025/06/03/ralph-wiggum-an-open-source-coding-agent](https://alviano.com/2025/06/03/ralph-wiggum-an-open-source-coding-agent/). The canonical patterns — fresh-context outer loop, `<promise>DONE</promise>` completion signal, AGENTS.md constitution, IMPLEMENTATION_PLAN.md as shared state — are derived directly from that design. Thanks Sam!
+
 An LLM-powered coding agent that runs on a **Linux host** (scout) and uses **Ollama on an Apple M4 Mac** for reasoning, with tool access via a **CGI-based MCP server**. The agent manages a workspace for file operations, compilation, and execution.
 
 ## Architecture
