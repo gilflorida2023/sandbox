@@ -27,10 +27,12 @@ done
 if [ "$CLEAN" = true ]; then
     echo "[Ralph] --clean: unloading stale models, resetting workspace/repos/ and IMPLEMENTATION_PLAN.md"
     ollama ps 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r model; do
-        echo "  Unloading $model"
-        ollama stop "$model" 2>/dev/null || true
+    echo "  Unloading $model"
+    ollama stop "$model" 2>/dev/null || true
     done
     rm -rf workspace/repos/*
+    # Remove stale workspace scripts from previous runs
+    find workspace/ -maxdepth 1 -name '*.sh' -delete
     cat > workspace/IMPLEMENTATION_PLAN.md << 'PLAN'
 # Implementation Plan
 
@@ -52,6 +54,9 @@ fi
 
 export RALPH_TEXT_ONLY=1
 [ "$VERBOSE" = true ] && export RALPH_VERBOSE=1
+
+# Go is installed at ~/.local/go/bin — ensure it's on PATH for the agent
+export PATH="$HOME/.local/go/bin:$PATH"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Ralph Loop — $(date)"

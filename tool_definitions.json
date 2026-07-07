@@ -92,36 +92,6 @@
   {
     "type": "function",
     "function": {
-      "name": "workspace.webfetch",
-      "description": "Fetch a URL and return its text content as markdown.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "url": {"type": "string", "description": "URL to fetch"},
-          "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 30}
-        },
-        "required": ["url"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "workspace.websearch",
-      "description": "Search the web for a query. Returns results with titles, URLs, and snippets.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {"type": "string", "description": "Search query"},
-          "max_results": {"type": "integer", "description": "Maximum results to return", "default": 5}
-        },
-        "required": ["query"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "workspace.git_clone",
       "description": "Clone a git repository. Path is a subdirectory within the workspace root.",
       "parameters": {
@@ -159,7 +129,7 @@
         "properties": {
           "prompt": {"type": "string", "description": "Task for the subagent to perform"},
           "model": {"type": "string", "description": "Worker model (default: qwen3:0.6b)", "default": "qwen3:0.6b"},
-          "tools": {"type": "string", "description": "Comma-separated allowed tools (default: all)", "default": "workspace.read,workspace.write,workspace.run,workspace.search,workspace.list,workspace.git_clone,workspace.compile,workspace.delete,workspace.webfetch,workspace.websearch"}
+          "tools": {"type": "string", "description": "Comma-separated allowed tools (default: all)", "default": "workspace.read,workspace.write,workspace.run,workspace.search,workspace.list,workspace.git_clone,workspace.compile,workspace.delete"}
         },
         "required": ["prompt"]
       }

@@ -37,3 +37,5 @@
 - Companion CLI tools (in ~/.local/bin): rg (ripgrep), fd, xh (HTTP client with -j), yq (YAML), jq (JSON).
 
 ### Codebase Patterns
+
+- Go is installed at `~/.local/go/bin/go` — use full path or ensure PATH includes `$HOME/.local/go/bin`

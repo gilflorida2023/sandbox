@@ -53,6 +53,16 @@ def normalize(name):
     name = name.lstrip("/")
     return name.replace("_", ".")
 
+def failure_key(tc, result):
+    """Generate a key for repeated-failure detection."""
+    name = tc.get("function", {}).get("name", "?")
+    try:
+        r = json.loads(result)
+        error = r.get("error", "")[:80]
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        error = str(result)[:80]
+    return f"{name}:{error}"
+
 def extract_tool_calls(msg):
     content = msg.get("content", "")
     tcs = msg.get("tool_calls", [])
@@ -157,6 +167,8 @@ def main():
     tools = load_tools()
     vlog(f"Model: {MODEL}, tools: {len(tools)}, text_only: {TEXT_ONLY}")
 
+    failure_counts = {}
+
     for inner in range(MAX_INNER):
         it = inner + 1
         vlog(f"iter {it} → Ollama ({len(messages)} messages)")
@@ -185,6 +197,21 @@ def main():
             out = run_tool(tc, it)
             tc_id = tc.get("id", f"call_{tcs.index(tc)}")
             messages.append({"role": "tool", "content": out, "tool_call_id": tc_id})
+
+            # Repeated-failure detection: same tool+error 3× → abort
+            fk = failure_key(tc, out)
+            failure_counts[fk] = failure_counts.get(fk, 0) + 1
+            if failure_counts[fk] >= 3:
+                vlog(f"Repeated failure ({failure_counts[fk]}×): {fk}")
+                messages.append({
+                    "role": "tool",
+                    "content": json.dumps({"error": f"Repeated failure: {tc.get('function', {}).get('name', '?')} failed {failure_counts[fk]} times with same error. Report this as a blocker — do NOT retry."}),
+                    "tool_call_id": f"blocker_{inner}"
+                })
+                break
+        else:
+            continue
+        break
 
     sys.stderr.write("Max inner iterations reached\n")
     sys.stderr.write("Last messages:\n")

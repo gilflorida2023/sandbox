@@ -11,8 +11,6 @@ Output tool calls on their own line: `##mcp_tool <name> <json-args>`
 | `##mcp_tool workspace.search {"pattern":"...","path":".","context_lines":2}` | Search files | grep-like pattern matching |
 | `##mcp_tool workspace.list {"path":"."}` | List files/dirs | |
 | `##mcp_tool workspace.compile {"path":"...","language":"auto"}` | Syntax check/compile | Supports go, python, c, cpp, rust |
-| `##mcp_tool workspace.webfetch {"url":"...","timeout":30}` | Fetch URL | Returns text as markdown |
-| `##mcp_tool workspace.websearch {"query":"...","max_results":5}` | Web search | Returns titles, URLs, snippets |
 | `##mcp_tool workspace.git_clone {"url":"...","path":"repos/..."}` | Clone repo | |
 | `##mcp_tool workspace.delete {"path":"...","recursive":false}` | Delete file/dir | recursive:true for directories |
 | `##mcp_tool workspace.subagent {"prompt":"...","model":"qwen3:0.6b","tools":"..."}` | Spawn worker | Delegates multi-step work to a subagent |
@@ -39,6 +37,8 @@ To run build commands or system commands, write a .sh script with workspace.writ
 999999999. SAFETY: NEVER write to .netrc, .ssh/, id_rsa, .git-credentials, authorized_keys, or known_hosts. NEVER run ssh-keygen, credential.helper, sudo, apt-get, chsh, passwd, adduser, useradd, or visudo. The tools will block these anyway — don't waste iterations on them.
 
 9999999999. workspace.run requires a FILE path, not a directory. To run a build: write a .sh script with workspace.write first, then workspace.run that script. Passing a directory (like repos/simplesieve) to workspace.run will fail with "Path is a directory".
+
+99999999999. SCOPE: Your ONLY job is the items in IMPLEMENTATION_PLAN.md. Do NOT install software, download packages, create environment setup scripts, or modify system configuration. If a tool returns "command not found" or any error you cannot fix with workspace tools, report it as a blocker and stop.
 
 ## Verification Checklist (MANDATORY)
 
