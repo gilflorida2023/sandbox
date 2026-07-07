@@ -29,6 +29,9 @@ case "$TOOL_NAME" in
     workspace.websearch) script="$CGI_DIR/websearch.py" ;;
     workspace.git_clone) script="$CGI_DIR/git_clone.py" ;;
     workspace.subagent)  script="$CGI_DIR/subagent.sh" ;;
+    workspace.graphviz)  script="$CGI_DIR/graphviz.py" ;;
+    workspace.vision_describe) script="$CGI_DIR/vision_describe.py" ;;
+    workspace.deploy_tool) script="$CGI_DIR/deploy_tool.py" ;;
     *)
         echo "{\"success\":false,\"error\":\"Unknown tool: $TOOL_NAME\"}"
         exit 1

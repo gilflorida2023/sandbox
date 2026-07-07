@@ -32,6 +32,13 @@
 - NEVER pass a directory to workspace.run
 - workspace.run on a .sh file auto-runs with bash. workspace.run on a .py file auto-runs with python3.
 
+## Where Files Go
+- **User code / build scripts** → workspace/ root (e.g. `workspace.read {"path":"build.sh"}`)
+- **Git clones** → workspace/repos/ (e.g. `workspace.git_clone {"path":"repos/project"}`)
+- **Test images** → workspace/ root or workspace/examples/
+- **New tool scripts (*.py)** → write to workspace/tools/ first (e.g. `workspace.write {"path":"tools/my_tool.py","content":"..."}`), then call `workspace.deploy_tool {"source":"tools/my_tool.py","tool_name":"my_tool"}` to install it into scout/cgi-bin/workspace/ and register it.
+- **You CANNOT write directly to scout/cgi-bin/workspace/** via workspace.write — the path is outside the workspace sandbox. Use workspace.deploy_tool instead.
+
 ## Subagent
 - For any multi-step task (clone+build, build+run, search+analyze), delegate to a subagent instead of doing it inline:
   ```

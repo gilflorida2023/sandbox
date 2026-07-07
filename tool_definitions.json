@@ -122,16 +122,15 @@
   {
     "type": "function",
     "function": {
-      "name": "workspace.subagent",
-      "description": "Spawn a worker subagent. Worker runs independently and returns a summary of results. Use for searching, cloning, building, testing — anything multi-step that would bloat context window.",
+      "name": "workspace.deploy_tool",
+      "description": "Deploy a Python script from workspace/ into scout/cgi-bin/workspace/ and register it as a new MCP tool. Use after workspace.write to create the script.",
       "parameters": {
         "type": "object",
         "properties": {
-          "prompt": {"type": "string", "description": "Task for the subagent to perform"},
-          "model": {"type": "string", "description": "Worker model (default: qwen3:0.6b)", "default": "qwen3:0.6b"},
-          "tools": {"type": "string", "description": "Comma-separated allowed tools (default: all)", "default": "workspace.read,workspace.write,workspace.run,workspace.search,workspace.list,workspace.git_clone,workspace.compile,workspace.delete"}
+          "source": {"type": "string", "description": "Source path relative to workspace root (e.g. 'tools/my_tool.py')"},
+          "tool_name": {"type": "string", "description": "Tool name without prefix (e.g. 'my_tool' becomes workspace.my_tool)"}
         },
-        "required": ["prompt"]
+        "required": ["source", "tool_name"]
       }
     }
   }
