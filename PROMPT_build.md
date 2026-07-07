@@ -6,3 +6,8 @@ Work until complete, then output `<promise>DONE</promise>`.
 CRITICAL: First, list workspace/specs/ and read every spec file.
 If a tool fails, DO NOT retry — change your approach completely.
 Use workspace.subagent for any multi-step work (clone+build, build+run).
+
+IMPORTANT — When a task is complete:
+1. Update IMPLEMENTATION_PLAN.md: change `- [ ]` to `- [x]` for the completed item and append a brief summary of what was created/done.
+2. Then output `<promise>DONE</promise>`.
+This ensures completed work is tracked and not re-assigned.

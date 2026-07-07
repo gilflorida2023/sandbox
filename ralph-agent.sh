@@ -24,6 +24,7 @@ jq -n --arg prompt "$PROMPT" '[{"role":"user","content":$prompt}]' > "$MESSAGES_
 
 declare -A FAIL_COUNTS
 EMPTY_COUNT=0
+NEAR_EMPTY_COUNT=0
 API_LOG="$SELF_DIR/workspace/ollama_api_log.jsonl"
 
 for ((i=1; i<=MAX_INNER; i++)); do
@@ -110,8 +111,20 @@ for ((i=1; i<=MAX_INNER; i++)); do
         EMPTY_COUNT=0
     fi
 
+    # Near-empty spiral: tracks empty/short responses regardless of tool calls
+    if [ "${#CONTENT}" -lt 5 ]; then
+        NEAR_EMPTY_COUNT=$((NEAR_EMPTY_COUNT + 1))
+    else
+        NEAR_EMPTY_COUNT=$((NEAR_EMPTY_COUNT > 0 ? NEAR_EMPTY_COUNT - 1 : 0))
+    fi
+
     if [ "$EMPTY_COUNT" -ge 5 ]; then
         [ "$VERBOSE" = "1" ] && echo "[ralph-agent] ⛔ text spiral: $EMPTY_COUNT consecutive text-only, exiting" >&2
+        exit 1
+    fi
+
+    if [ "$NEAR_EMPTY_COUNT" -ge 7 ]; then
+        [ "$VERBOSE" = "1" ] && echo "[ralph-agent] ⛔ near-empty spiral: $NEAR_EMPTY_COUNT near-empty in recent iters, exiting" >&2
         exit 1
     fi
 
@@ -137,13 +150,30 @@ for ((i=1; i<=MAX_INNER; i++)); do
 
             # Repeated-failure guard: if same tool+args fails 3+ times, override result
             if echo "$RESULT" | jq -e '.success == false or (.error != null and .error != "")' >/dev/null 2>&1; then
-                FAIL_KEY="$NAME|$ARGS_RAW"
+                FAIL_KEY="$NAME"
                 COUNT="${FAIL_COUNTS[$FAIL_KEY]:-0}"
                 COUNT=$((COUNT + 1))
                 FAIL_COUNTS["$FAIL_KEY"]=$COUNT
                 if [ "$COUNT" -ge 3 ]; then
                     RESULT='{"success":false,"error":"BLOCKER: This exact tool call has failed 3 times. STOP repeating it. Read the error messages above and completely change your approach.","blocker":true}'
                     [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  ⛔ blocker: $NAME failed $COUNT times" >&2
+                fi
+            fi
+
+            # Auto-verify workspace.write: read back file to catch hallucinations
+            if [ "$NAME" = "workspace.write" ] && echo "$RESULT" | jq -e '.success == true' >/dev/null 2>&1; then
+                WRITE_PATH=$(echo "$ARGS_RAW" | jq -r '.path // ""')
+                if [ -n "$WRITE_PATH" ]; then
+                    VERIFY=$(echo "{\"path\":\"$WRITE_PATH\"}" | timeout 10 bash "$SELF_DIR/mcp_tool.sh" workspace.read || echo '{"error":"verify failed"}')
+                    VERIFY_SUCCESS=$(echo "$VERIFY" | jq -r '.success // false')
+                    VERIFY_CONTENT=$(echo "$VERIFY" | jq -r '.content // ""')
+                    if [ "$VERIFY_SUCCESS" != "true" ] || [ -z "$VERIFY_CONTENT" ]; then
+                        RESULT='{"success":false,"error":"HALLUCINATION DETECTED: workspace.write claimed success but the file does not exist or has no content. Do NOT retry this write — the file path may be wrong or the write never happened.","hallucination":true}'
+                        [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  ⛔ write hallucination: $WRITE_PATH not found" >&2
+                    else
+                        VERIFY_LEN=${#VERIFY_CONTENT}
+                        [ "$VERBOSE" = "1" ] && echo "[ralph-agent]  ✓ write verified: $WRITE_PATH ($VERIFY_LEN chars)" >&2
+                    fi
                 fi
             fi
 

@@ -5,7 +5,7 @@
 2. Read IMPLEMENTATION_PLAN.md and pick the highest-priority unchecked task
 3. Work on it using the available tools
 4. When a task is complete, verify it (read files, run commands, check output)
-5. Update IMPLEMENTATION_PLAN.md to mark progress
+5. Update IMPLEMENTATION_PLAN.md to mark the item `[x]` with a summary of what was created
 6. When ALL tasks are complete and verified, output `<promise>DONE</promise>`
 
 ## Critical Rules — Read These Carefully

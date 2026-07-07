@@ -60,9 +60,20 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 [ ! -f "$PROMPT_FILE" ] && { echo "Error: $PROMPT_FILE not found"; exit 1; }
 
+# Check if all plan items are already completed before starting
+if [ -f "workspace/IMPLEMENTATION_PLAN.md" ]; then
+    ALL_DONE=$(grep -c '^- \[x\]' workspace/IMPLEMENTATION_PLAN.md 2>/dev/null || true)
+    TOTAL=$(grep -c '^- \[' workspace/IMPLEMENTATION_PLAN.md 2>/dev/null || true)
+    if [ "$TOTAL" -gt 0 ] && [ "$ALL_DONE" -eq "$TOTAL" ]; then
+        echo "[Ralph] All tasks already completed. Nothing to do."
+        exit 0
+    fi
+fi
+
 while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
+    ITERATION=$((ITERATION + 1))
     echo ""
-    echo "[Ralph] Iteration $((ITERATION + 1))..."
+    echo "[Ralph] Iteration $ITERATION..."
 
     WORKSPACE_TREE=$( (echo "  workspace/"; find workspace/ -type f -o -type d | sed 's|^workspace/|    |' | sort) 2>/dev/null || echo "  (empty)")
 
@@ -95,7 +106,6 @@ while [ "$ITERATION" -lt "$MAX_ITERATIONS" ]; do
         sleep 1
     }
 
-    ITERATION=$((ITERATION + 1))
     echo ""
     echo "━━━━━━━━━━━ LOOP $ITERATION COMPLETE ─────────"
 done

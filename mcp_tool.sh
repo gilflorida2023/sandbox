@@ -22,7 +22,6 @@ case "$TOOL_NAME" in
     workspace.list)     script="$CGI_DIR/list.py" ;;
     workspace.delete)   script="$CGI_DIR/delete.py" ;;
     workspace.compile)  script="$CGI_DIR/compile.py" ;;
-    workspace.build)    script="$CGI_DIR/build.py" ;;
     workspace.run)      script="$CGI_DIR/run.py" ;;
     workspace.search)   script="$CGI_DIR/search.py" ;;
     workspace.webfetch) script="$CGI_DIR/webfetch.py" ;;
@@ -32,6 +31,9 @@ case "$TOOL_NAME" in
     workspace.graphviz)  script="$CGI_DIR/graphviz.py" ;;
     workspace.vision_describe) script="$CGI_DIR/vision_describe.py" ;;
     workspace.deploy_tool) script="$CGI_DIR/deploy_tool.py" ;;
+    workspace.find)       script="$CGI_DIR/find_files.py" ;;
+    workspace.run_command) script="$CGI_DIR/run_command.py" ;;
+    workspace.create_test_image) script="$CGI_DIR/create_test_image.py" ;;
     *)
         echo "{\"success\":false,\"error\":\"Unknown tool: $TOOL_NAME\"}"
         exit 1

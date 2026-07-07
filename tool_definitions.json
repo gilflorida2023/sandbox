@@ -45,7 +45,7 @@
     "type": "function",
     "function": {
       "name": "workspace.run",
-      "description": "Execute a script or binary. Runs .py files with python3, .sh files with bash.",
+      "description": "Execute a script or binary. Runs .py files with python3, .sh files with bash. First arg 'path' must be an EXISTING script in the workspace — do NOT pass system commands like 'chmod', 'mkdir', 'git' here. For system commands, write a small .sh wrapper script instead (e.g. write a script that runs 'chmod +x tools/foo.sh', then workspace.run that script).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -131,6 +131,129 @@
           "tool_name": {"type": "string", "description": "Tool name without prefix (e.g. 'my_tool' becomes workspace.my_tool)"}
         },
         "required": ["source", "tool_name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.webfetch",
+      "description": "Fetch and return content from a URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "URL to fetch"},
+          "format": {"type": "string", "enum": ["markdown", "text", "html"], "default": "markdown"}
+        },
+        "required": ["url"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.websearch",
+      "description": "Search the web for information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search query"},
+          "num_results": {"type": "integer", "description": "Number of results to return", "default": 8}
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.graphviz",
+      "description": "Generate a PNG diagram from DOT source using the dot binary. Use this instead of writing wrapper scripts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dot_source": {"type": "string", "description": "DOT graph source code (e.g. 'digraph G { A -> B }')"},
+          "output": {"type": "string", "description": "Output PNG filename (e.g. 'diagram.png')"}
+        },
+        "required": ["dot_source", "output"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.vision_describe",
+      "description": "Describe an image using an Ollama vision model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_path": {"type": "string", "description": "Path to image file relative to workspace root"},
+          "prompt": {"type": "string", "description": "Optional prompt for the vision model"},
+          "model": {"type": "string", "description": "Vision model name (default: qwen3-vl:2b)"}
+        },
+        "required": ["image_path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.subagent",
+      "description": "Delegate a multi-step task to a worker agent. Use for clone+build, build+run, search+analyze.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {"type": "string", "description": "Detailed instructions for the worker agent"},
+          "model": {"type": "string", "description": "Model to use for the worker (default: qwen3:0.6b)"}
+        },
+        "required": ["prompt"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.find",
+      "description": "Find files by glob pattern (e.g. '**/*.py', 'tools/*.png'). Returns relative paths.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {"type": "string", "description": "Glob pattern to match against file paths"},
+          "path": {"type": "string", "description": "Directory to search in, relative to workspace root", "default": "."}
+        },
+        "required": ["pattern"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.run_command",
+      "description": "Run a single shell command in the workspace root. Use for chmod, ls, mkdir, dot, python3 one-liners. Do NOT use for pip, sudo, apt-get, or security-sensitive commands (they are blocked).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "description": "Shell command to run (e.g. 'chmod +x tools/script.sh', 'ls -la', 'mkdir -p examples')"},
+          "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 10}
+        },
+        "required": ["command"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "workspace.create_test_image",
+      "description": "Create a simple test PNG image using Pillow. Use instead of writing image-generation code yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "output": {"type": "string", "description": "Output filename (e.g. 'test_diagram.png')", "default": "test_diagram.png"},
+          "width": {"type": "integer", "description": "Image width in pixels", "default": 200},
+          "height": {"type": "integer", "description": "Image height in pixels", "default": 200},
+          "shape": {"type": "string", "enum": ["rectangle", "circle", "lines"], "description": "Shape to draw on the image", "default": "rectangle"}
+        },
+        "required": []
       }
     }
   }
