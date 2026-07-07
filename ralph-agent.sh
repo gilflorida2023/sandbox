@@ -25,7 +25,12 @@ jq -n --arg prompt "$PROMPT" '[{"role":"user","content":$prompt}]' > "$MESSAGES_
 declare -A FAIL_COUNTS
 
 for ((i=1; i<=MAX_INNER; i++)); do
-    [ "$VERBOSE" = "1" ] && echo "[ralph-agent] iter $i → Ollama (model: $MODEL)" >&2
+    [ "$VERBOSE" = "1" ] && {
+        MSG_COUNT=$(jq 'length' "$MESSAGES_FILE")
+        PAYLOAD_BYTES=$(wc -c <<< "$MESSAGES")
+        echo "[ralph-agent] ── iter $i ─────────────────────" >&2
+        echo "[ralph-agent] ${MSG_COUNT} msgs, ~${PAYLOAD_BYTES}b → Ollama ($MODEL)" >&2
+    }
 
     MESSAGES=$(cat "$MESSAGES_FILE")
     TOOLS=$(cat "$TOOLS_FILE")
@@ -42,12 +47,25 @@ for ((i=1; i<=MAX_INNER; i++)); do
             options: {temperature: 0.3, num_ctx: 8192}
         }')
 
-    RESPONSE=$(curl -s --max-time 300 "$OLLAMA_HOST/api/chat" \
+    RESPONSE=$(curl -s --max-time 300 --output "$MSG_FILE.tmp" -w "%{http_code}:%{time_total}:%{size_download}" \
+        "$OLLAMA_HOST/api/chat" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD" 2>/dev/null) || {
         rc=$?
         echo "Ollama error: curl failed (exit $rc)" >&2
         continue
+    }
+
+    # Parse curl stats from the header line
+    CURL_STATS="$RESPONSE"
+    RESPONSE=$(cat "$MSG_FILE.tmp")
+    HTTP_CODE="${CURL_STATS%%:*}"
+    REST="${CURL_STATS#*:}"
+    TIME_TOTAL="${REST%%:*}"
+    SIZE_DOWNLOAD="${REST##*:}"
+
+    [ "$VERBOSE" = "1" ] && {
+        echo "[ralph-agent] ← HTTP $HTTP_CODE, ${TIME_TOTAL}s, ${SIZE_DOWNLOAD}b" >&2
     }
 
     ROLE=$(echo "$RESPONSE" | jq -r '.message.role // "assistant"')
