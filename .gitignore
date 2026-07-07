@@ -8,7 +8,7 @@ results/
 scout/sessions/
 scout/locks/
 scout/contexts/
-workspace/
+/workspace/
 
 # Python cache
 __pycache__/

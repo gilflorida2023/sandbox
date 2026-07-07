@@ -21,7 +21,7 @@ case "$TOOL_NAME" in
     workspace.webfetch)  "$CGI_DIR/webfetch.py" <<< "$ARGS" ;;
     workspace.websearch)  "$CGI_DIR/websearch.py" <<< "$ARGS" ;;
     workspace.git_clone)  "$CGI_DIR/git_clone.py" <<< "$ARGS" ;;
-    workspace.subagent)    "$CGI_DIR/subagent.py" <<< "$ARGS" ;;
+    workspace.subagent)    "$CGI_DIR/subagent.sh" <<< "$ARGS" ;;
     *)
         echo '{"success":false,"error":"Unknown tool: '"$TOOL_NAME"'","retryable":false}'
         exit 1
